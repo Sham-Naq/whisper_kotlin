@@ -11,6 +11,13 @@ import com.whispercpp.java.whisper.WhisperContext
 object WhisperEngine {
     @Volatile private var ctx: WhisperContext? = null
 
+    /** Load a ggml model from an absolute file path on disk (e.g., filesDir/models/ggml-*.bin). */
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun loadModelFromFile(modelPath: String) {
+        if (ctx != null) return
+        ctx = WhisperContext.createContextFromFile(modelPath)
+    }
+
     /** Load a ggml model from assets (e.g., models/ggml-tiny-q5_1.bin). */
     @RequiresApi(Build.VERSION_CODES.O)
     fun loadModelFromAssets(context: Context, assetPath: String) {

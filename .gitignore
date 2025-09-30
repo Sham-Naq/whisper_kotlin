@@ -24,3 +24,5 @@ out/
 # Misc
 *.keystore
 *.jks
+
+app/src/main/cpp/third_party

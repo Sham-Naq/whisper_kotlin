@@ -33,6 +33,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntSize
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -108,6 +111,10 @@ private fun HomeScreen() {
         }
 
         // Content area
+        // Track selected model from the selector so Transcription screen can use it
+    var selectedModel by remember { mutableStateOf<ModelOption?>(null) }
+        var isModelDownloading by remember { mutableStateOf(false) }
+
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -119,7 +126,9 @@ private fun HomeScreen() {
                 ModelSelectorRow(
                     textColor = primaryTextColor,
                     isDark = isDark,
-                    buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6)
+                    buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+                    onSelected = { opt -> selectedModel = opt },
+                    onDownloadingChanged = { downloading -> isModelDownloading = downloading }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -128,7 +137,14 @@ private fun HomeScreen() {
                 startDestination = BottomTab.Transcription.route,
                 modifier = Modifier.fillMaxWidth().weight(1f)
             ) {
-                composable(BottomTab.Transcription.route) { TranscriptionScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
+                composable(BottomTab.Transcription.route) {
+                    TranscriptionScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = primaryTextColor,
+                        selectedModel = selectedModel,
+                        isModelDownloading = isModelDownloading
+                    )
+                }
                 composable(BottomTab.Recorder.route) { RecorderScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
                 composable(BottomTab.Settings.route) { SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
             }
@@ -385,7 +401,12 @@ private fun IconSettings(color: Color = Color(0xFF111111), modifier: Modifier = 
 }
 
 @Composable
-private fun TranscriptionScreen(modifier: Modifier = Modifier, textColor: Color = Color(0xFF0D47A1)) {
+private fun TranscriptionScreen(
+    modifier: Modifier = Modifier,
+    textColor: Color = Color(0xFF0D47A1),
+    selectedModel: ModelOption? = null,
+    isModelDownloading: Boolean = false
+) {
     val ctx = LocalContext.current
     var log by remember { mutableStateOf("No transcriptions made\n") }
     val scope = rememberCoroutineScope()
@@ -398,10 +419,23 @@ private fun TranscriptionScreen(modifier: Modifier = Modifier, textColor: Color 
             ActionButton("Load model", textColor) {
                 scope.launch(Dispatchers.IO) {
                     try {
-                        // You will place the model yourself under assets/models
-                        WhisperEngine.loadModelFromAssets(ctx, "models/ggml-tiny-q5_1.bin")
-                        val sys = WhisperEngine.systemInfo()
-                        append("Model loaded.\n$sys")
+                        // Prefer downloaded model if selected and present; otherwise fall back to asset demo
+                        val opt = selectedModel
+                        val modelPath = if (opt != null) {
+                            val file = java.io.File(java.io.File(ctx.filesDir, "models"), opt.fileName)
+                            if (file.exists() && file.length() > 0L) file.absolutePath else null
+                        } else null
+
+                        if (modelPath != null && !isModelDownloading) {
+                            WhisperEngine.loadModelFromFile(modelPath)
+                            val sys = WhisperEngine.systemInfo()
+                            append("Model loaded (file): ${modelPath}\n$sys")
+                        } else {
+                            val modelAssetPath = "models/ggml-tiny-q5_1.bin"
+                            WhisperEngine.loadModelFromAssets(ctx, modelAssetPath)
+                            val sys = WhisperEngine.systemInfo()
+                            append("Model loaded (asset): ${modelAssetPath}\n$sys")
+                        }
                     } catch (t: Throwable) {
                         append("Load failed: ${'$'}t")
                     }
@@ -410,8 +444,11 @@ private fun TranscriptionScreen(modifier: Modifier = Modifier, textColor: Color 
             ActionButton("Transcribe sample", textColor) {
                 scope.launch(Dispatchers.IO) {
                     try {
+                        val startNs = android.os.SystemClock.elapsedRealtimeNanos()
                         val text = WhisperEngine.transcribeWavAsset(ctx, "samples/samples_jfk.wav")
-                        append("Transcript:\n$text")
+                        val elapsedMs = (android.os.SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
+                        val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", elapsedMs / 1000.0) + " s (" + elapsedMs.toLong() + " ms)"
+                        append("Transcript:\n$text\n$timeLine")
                     } catch (t: Throwable) {
                         append("Transcribe failed: ${'$'}t")
                     }
@@ -469,21 +506,25 @@ private fun ModelSelectorRow(
     textColor: Color,
     isDark: Boolean,
     buttonBg: Color,
+    onSelected: (ModelOption) -> Unit,
+    onDownloadingChanged: (Boolean) -> Unit,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Available remote models (subset). Add more as needed.
+    // Populate from ModelManager catalog so all supported models appear
     val options = remember {
-        listOf(
-            ModelOption("ggml-tiny-q5_1", fileName = "ggml-tiny-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin?download=true"),
-            ModelOption("ggml-base-q5_1", fileName = "ggml-base-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin?download=true"),
-            ModelOption("ggml-small-q5_1", fileName = "ggml-small-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin?download=true")
-        )
+        ModelManager.availableModels().map { spec ->
+            ModelOption(id = spec.id, fileName = spec.fileName, url = spec.url)
+        }
     }
     var expanded by remember { mutableStateOf(false) }
-    var selectedId by rememberSaveable { mutableStateOf("ggml-tiny-q5_1") }
+    var selectedId by rememberSaveable { mutableStateOf(options.firstOrNull()?.id ?: "ggml-tiny") }
     var downloadingId by remember { mutableStateOf<String?>(null) }
     var progressPct by remember { mutableStateOf(0) }
+
+    // Anchor position and size for popup placement
+    var anchorPos by remember { mutableStateOf(Offset.Zero) }
+    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
 
     Column(modifier = Modifier
         .fillMaxWidth()
@@ -497,68 +538,100 @@ private fun ModelSelectorRow(
                 modifier = Modifier
                     .background(buttonBg, RoundedCornerShape(8.dp))
                     .clickable { expanded = !expanded }
+                    .onGloballyPositioned { coords ->
+                        anchorPos = coords.positionInRoot()
+                        anchorSize = coords.size
+                    }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 BasicText("Select model", style = TextStyle(color = textColor, fontWeight = FontWeight.Medium))
             }
             // Selected model label
-            BasicText(
-                text = if (downloadingId != null) "Downloading ${downloadingId}… ${progressPct}%" else selectedId,
-                style = TextStyle(color = textColor)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicText(
+                    text = if (downloadingId != null) "Downloading ${downloadingId}… ${progressPct}%" else selectedId,
+                    style = TextStyle(color = textColor)
+                )
+                if (downloadingId != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { ModelManager.cancelDownload(downloadingId!!) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CancelIcon(color = textColor)
+                    }
+                }
+            }
         }
 
         if (expanded) {
-            // Simple dropdown under the selector
             val cardBg = if (isDark) Color(0xFF232323) else Color(0xFFFFFFFF)
             val border = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0)
-            Column(
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .background(cardBg, RoundedCornerShape(10.dp))
-                    .border(1.dp, border, RoundedCornerShape(10.dp))
-                    .padding(vertical = 6.dp)
+            // Show as an overlay popup positioned under the anchor button
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(anchorPos.x.toInt(), (anchorPos.y + anchorSize.height).toInt()),
+                properties = PopupProperties(focusable = true),
+                onDismissRequest = { expanded = false }
             ) {
-                options.forEach { opt ->
-                    val isDownloaded = ModelManager.isModelPresent(ctx, opt.fileName)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = downloadingId == null) {
-                                if (isDownloaded) {
-                                    selectedId = opt.id
-                                    expanded = false
-                                } else {
-                                    // Start download
-                                    downloadingId = opt.id
-                                    progressPct = 0
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            ModelManager.ensureModel(
-                                                context = ctx,
-                                                modelFileName = opt.fileName,
-                                                modelUrl = opt.url,
-                                                onProgress = { p ->
-                                                    val pct = if (p.totalBytes > 0) ((p.bytesRead * 100L) / p.totalBytes).toInt() else 0
-                                                    progressPct = pct.coerceIn(0, 100)
-                                                }
-                                            )
-                                            selectedId = opt.id
-                                        } finally {
-                                            downloadingId = null
-                                            expanded = false
+                Column(
+                    modifier = Modifier
+                        .background(cardBg, RoundedCornerShape(10.dp))
+                        .border(1.dp, border, RoundedCornerShape(10.dp))
+                        .padding(vertical = 6.dp)
+                        .width(with(LocalDensity.current) { anchorSize.width.toDp().coerceAtLeast(180.dp) })
+                ) {
+                    options.forEach { opt ->
+                        val isDownloaded = ModelManager.isModelPresent(ctx, opt.fileName)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = downloadingId == null) {
+                                    if (isDownloaded) {
+                                        selectedId = opt.id
+                                        onSelected(opt)
+                                        expanded = false
+                                    } else {
+                                        // Start download
+                                        downloadingId = opt.id
+                                        progressPct = 0
+                                        onDownloadingChanged(true)
+                                        scope.launch(Dispatchers.IO) {
+                                            try {
+                                                ModelManager.ensureModel(
+                                                    context = ctx,
+                                                    modelFileName = opt.fileName,
+                                                    modelUrl = opt.url,
+                                                    onProgress = { p ->
+                                                        val pct = if (p.totalBytes > 0) ((p.bytesRead * 100L) / p.totalBytes).toInt() else 0
+                                                        progressPct = pct.coerceIn(0, 100)
+                                                    }
+                                                )
+                                                selectedId = opt.id
+                                                onSelected(opt)
+                                            } catch (ce: java.util.concurrent.CancellationException) {
+                                                // Optional: could set a transient "Canceled" message
+                                            } catch (t: Throwable) {
+                                                // Optional: surface error to UI
+                                            } finally {
+                                                downloadingId = null
+                                                onDownloadingChanged(false)
+                                                expanded = false
+                                            }
                                         }
                                     }
                                 }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            BasicText(text = opt.id, style = TextStyle(color = textColor))
+                            if (!isDownloaded) {
+                                DownloadIcon(color = textColor)
                             }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        BasicText(text = opt.id, style = TextStyle(color = textColor))
-                        if (!isDownloaded || downloadingId == opt.id) {
-                            DownloadIcon(color = textColor)
                         }
                     }
                 }
@@ -603,14 +676,24 @@ private fun PreviewTranscriptionScreen() {
     TranscriptionScreen(modifier = Modifier.fillMaxSize())
 }
 
-@Preview(showBackground = true, name = "Recorder Screen")
 @Composable
 private fun PreviewRecorderScreen() {
     RecorderScreen(modifier = Modifier.fillMaxSize())
 }
 
-@Preview(showBackground = true, name = "Settings Screen")
 @Composable
 private fun PreviewSettingsScreen() {
     SettingsScreen(modifier = Modifier.fillMaxSize())
+}
+
+@Composable
+private fun CancelIcon(color: Color, modifier: Modifier = Modifier.size(12.dp)) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = (w.coerceAtMost(h) * 0.18f)
+        // Draw an X
+        drawLine(color = color, start = Offset(0f, 0f), end = Offset(w, h), strokeWidth = stroke)
+        drawLine(color = color, start = Offset(w, 0f), end = Offset(0f, h), strokeWidth = stroke)
+    }
 }

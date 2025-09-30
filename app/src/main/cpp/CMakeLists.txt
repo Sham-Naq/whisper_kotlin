@@ -4,11 +4,15 @@ project(whisper_android_kotlin)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Point to your whisper.cpp root (relative to this CMakeLists.txt)
-# File is at: app/src/main/cpp/CMakeLists.txt
-# We need to go up 5 levels to reach the workspace root, then into whisper.cpp
-get_filename_component(PROJ_ROOT "${CMAKE_SOURCE_DIR}/../../../../../" ABSOLUTE)
-set(WHISPER_LIB_DIR "${PROJ_ROOT}/whisper.cpp")
+# Point to a vendored copy of whisper.cpp inside the app module so everything lives under app/src/main/cpp
+# Expected location: app/src/main/cpp/third_party/whisper.cpp
+set(WHISPER_LIB_DIR "${CMAKE_SOURCE_DIR}/third_party/whisper.cpp")
+
+if (NOT EXISTS "${WHISPER_LIB_DIR}/src/whisper.cpp")
+    message(FATAL_ERROR "whisper.cpp not found at ${WHISPER_LIB_DIR}.\n"
+        "Add it via: git submodule add https://github.com/ggerganov/whisper.cpp app/src/main/cpp/third_party/whisper.cpp\n"
+        "Then run: git submodule update --init --recursive")
+endif()
 
 message(STATUS "Using WHISPER_LIB_DIR=${WHISPER_LIB_DIR}")
 
