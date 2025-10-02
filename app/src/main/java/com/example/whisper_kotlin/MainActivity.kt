@@ -17,12 +17,14 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -35,7 +37,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -45,6 +50,7 @@ import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.example.whisper_kotlin.ModelManager
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -414,41 +420,34 @@ private fun TranscriptionScreen(
     fun append(s: String) { log += s + "\n" }
 
     Column(modifier = modifier) {
-        // Actions row
+        // Actions row (no explicit load button; model is loaded on selection or lazily here)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionButton("Load model", textColor) {
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        // Prefer downloaded model if selected and present; otherwise fall back to asset demo
-                        val opt = selectedModel
-                        val modelPath = if (opt != null) {
-                            val file = java.io.File(java.io.File(ctx.filesDir, "models"), opt.fileName)
-                            if (file.exists() && file.length() > 0L) file.absolutePath else null
-                        } else null
-
-                        if (modelPath != null && !isModelDownloading) {
-                            WhisperEngine.loadModelFromFile(modelPath)
-                            val sys = WhisperEngine.systemInfo()
-                            append("Model loaded (file): ${modelPath}\n$sys")
-                        } else {
-                            val modelAssetPath = "models/ggml-tiny-q5_1.bin"
-                            WhisperEngine.loadModelFromAssets(ctx, modelAssetPath)
-                            val sys = WhisperEngine.systemInfo()
-                            append("Model loaded (asset): ${modelAssetPath}\n$sys")
-                        }
-                    } catch (t: Throwable) {
-                        append("Load failed: ${'$'}t")
-                    }
-                }
-            }
             ActionButton("Transcribe sample", textColor) {
                 scope.launch(Dispatchers.IO) {
                     try {
+                        if (isModelDownloading) {
+                            append("Please wait for model download to finish…")
+                            return@launch
+                        }
+                        // Ensure a model is loaded: prefer selected downloaded model, otherwise fallback to bundled asset
+                        val chosen = selectedModel
+                        val local = chosen?.let { opt ->
+                            val f = java.io.File(java.io.File(ctx.filesDir, "models"), opt.fileName)
+                            if (f.exists() && f.length() > 0L) f else null
+                        }
+                        val modelLabel = if (local != null) {
+                            // Force reload in case a previous context is active for a different model
+                            WhisperEngine.loadModelFromFile(local.absolutePath, force = true)
+                            chosen?.id ?: local.name
+                        } else {
+                            WhisperEngine.loadModelFromAssets(ctx, "models/ggml-tiny-q5_1.bin", force = true)
+                            "ggml-tiny-q5_1 (asset)"
+                        }
                         val startNs = android.os.SystemClock.elapsedRealtimeNanos()
                         val text = WhisperEngine.transcribeWavAsset(ctx, "samples/samples_jfk.wav")
                         val elapsedMs = (android.os.SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
                         val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", elapsedMs / 1000.0) + " s (" + elapsedMs.toLong() + " ms)"
-                        append("Transcript:\n$text\n$timeLine")
+                        append("Model: $modelLabel\nTranscript:\n$text\n$timeLine")
                     } catch (t: Throwable) {
                         append("Transcribe failed: ${'$'}t")
                     }
@@ -518,13 +517,12 @@ private fun ModelSelectorRow(
         }
     }
     var expanded by remember { mutableStateOf(false) }
-    var selectedId by rememberSaveable { mutableStateOf(options.firstOrNull()?.id ?: "ggml-tiny") }
+    var selectedId by rememberSaveable { mutableStateOf(options.firstOrNull()?.id ?: "whisper-tiny") }
     var downloadingId by remember { mutableStateOf<String?>(null) }
     var progressPct by remember { mutableStateOf(0) }
 
-    // Anchor position and size for popup placement
-    var anchorPos by remember { mutableStateOf(Offset.Zero) }
-    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
+    // Anchor bounds in window coordinates for popup placement
+    var anchorBounds by remember { mutableStateOf(Rect.Zero) }
 
     Column(modifier = Modifier
         .fillMaxWidth()
@@ -538,20 +536,21 @@ private fun ModelSelectorRow(
                 modifier = Modifier
                     .background(buttonBg, RoundedCornerShape(8.dp))
                     .clickable { expanded = !expanded }
-                    .onGloballyPositioned { coords ->
-                        anchorPos = coords.positionInRoot()
-                        anchorSize = coords.size
-                    }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 BasicText("Select model", style = TextStyle(color = textColor, fontWeight = FontWeight.Medium))
             }
             // Selected model label
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 BasicText(
                     text = if (downloadingId != null) "Downloading ${downloadingId}… ${progressPct}%" else selectedId,
-                    style = TextStyle(color = textColor)
+                    style = TextStyle(color = textColor),
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        anchorBounds = coords.boundsInWindow()
+                    }
                 )
                 if (downloadingId != null) {
                     Spacer(Modifier.width(8.dp))
@@ -570,10 +569,38 @@ private fun ModelSelectorRow(
         if (expanded) {
             val cardBg = if (isDark) Color(0xFF232323) else Color(0xFFFFFFFF)
             val border = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0)
-            // Show as an overlay popup positioned under the anchor button
+            val density = LocalDensity.current
+            val anchorSnapshot = anchorBounds
+            val verticalPaddingPx = with(density) { 6.dp.roundToPx() }
+            val popupPositionProvider = remember(anchorSnapshot, verticalPaddingPx) {
+                object : PopupPositionProvider {
+                    override fun calculatePosition(
+                        parentBounds: IntRect,
+                        windowSize: IntSize,
+                        layoutDirection: LayoutDirection,
+                        popupContentSize: IntSize
+                    ): IntOffset {
+                        if (anchorSnapshot.isEmpty) {
+                            return IntOffset.Zero
+                        }
+                        val rawLeft = when (layoutDirection) {
+                            LayoutDirection.Ltr -> anchorSnapshot.left.roundToInt()
+                            LayoutDirection.Rtl -> (anchorSnapshot.right - popupContentSize.width).roundToInt()
+                        }
+                        val rawTop = anchorSnapshot.bottom.roundToInt() + verticalPaddingPx
+                        val maxLeft = windowSize.width - popupContentSize.width
+                        val maxTop = windowSize.height - popupContentSize.height
+                        val clampedLeft = if (maxLeft > 0) rawLeft.coerceIn(0, maxLeft) else 0
+                        val clampedTop = if (maxTop > 0) rawTop.coerceIn(0, maxTop) else 0
+                        return IntOffset(clampedLeft, clampedTop)
+                    }
+                }
+            }
+            val anchorWidthDp = if (anchorSnapshot.isEmpty) 0.dp else with(density) { anchorSnapshot.width.toDp() }
+            val menuWidth = anchorWidthDp.coerceAtLeast(180.dp)
+            // Show as an overlay popup positioned under the anchor label
             Popup(
-                alignment = Alignment.TopStart,
-                offset = IntOffset(anchorPos.x.toInt(), (anchorPos.y + anchorSize.height).toInt()),
+                popupPositionProvider = popupPositionProvider,
                 properties = PopupProperties(focusable = true),
                 onDismissRequest = { expanded = false }
             ) {
@@ -582,7 +609,7 @@ private fun ModelSelectorRow(
                         .background(cardBg, RoundedCornerShape(10.dp))
                         .border(1.dp, border, RoundedCornerShape(10.dp))
                         .padding(vertical = 6.dp)
-                        .width(with(LocalDensity.current) { anchorSize.width.toDp().coerceAtLeast(180.dp) })
+                        .width(menuWidth)
                 ) {
                     options.forEach { opt ->
                         val isDownloaded = ModelManager.isModelPresent(ctx, opt.fileName)
@@ -594,6 +621,15 @@ private fun ModelSelectorRow(
                                         selectedId = opt.id
                                         onSelected(opt)
                                         expanded = false
+                                        // Load ggml model immediately on selection if present (force to switch models)
+                                        scope.launch(Dispatchers.IO) {
+                                            try {
+                                                val modelFile = ModelManager.getLocalModelFile(ctx, opt.fileName)
+                                                if (modelFile.exists() && modelFile.length() > 0L) {
+                                                    WhisperEngine.loadModelFromFile(modelFile.absolutePath, force = true)
+                                                }
+                                            } catch (_: Throwable) {}
+                                        }
                                     } else {
                                         // Start download
                                         downloadingId = opt.id
@@ -612,6 +648,11 @@ private fun ModelSelectorRow(
                                                 )
                                                 selectedId = opt.id
                                                 onSelected(opt)
+                                                // After download completes, load ggml model (force to switch models)
+                                                val modelFile = ModelManager.getLocalModelFile(ctx, opt.fileName)
+                                                if (modelFile.exists() && modelFile.length() > 0L) {
+                                                    WhisperEngine.loadModelFromFile(modelFile.absolutePath, force = true)
+                                                }
                                             } catch (ce: java.util.concurrent.CancellationException) {
                                                 // Optional: could set a transient "Canceled" message
                                             } catch (t: Throwable) {
