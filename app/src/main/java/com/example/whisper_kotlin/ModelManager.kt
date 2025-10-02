@@ -27,34 +27,49 @@ object ModelManager {
 
     private val AVAILABLE_MODELS: List<ModelSpec> = listOf(
         ModelSpec(
-            id = "ggml-tiny",
+            id = "tiny",
             fileName = "ggml-tiny.bin",
             url = HF_BASE + "ggml-tiny.bin?download=true"
         ),
         ModelSpec(
-            id = "ggml-tiny-q5_1",
+            id = "tiny-q5",
             fileName = "ggml-tiny-q5_1.bin",
             url = HF_BASE + "ggml-tiny-q5_1.bin?download=true"
         ),
         ModelSpec(
-            id = "ggml-tiny-q8_0",
+            id = "tiny-q8",
             fileName = "ggml-tiny-q8_0.bin",
             url = HF_BASE + "ggml-tiny-q8_0.bin?download=true"
         ),
         ModelSpec(
-            id = "ggml-base",
+            id = "base",
             fileName = "ggml-base.bin",
             url = HF_BASE + "ggml-base.bin?download=true"
         ),
         ModelSpec(
-            id = "ggml-base-q5_1",
+            id = "base-q5",
             fileName = "ggml-base-q5_1.bin",
             url = HF_BASE + "ggml-base-q5_1.bin?download=true"
         ),
         ModelSpec(
-            id = "ggml-base-q8_0",
+            id = "base-q8",
             fileName = "ggml-base-q8_0.bin",
             url = HF_BASE + "ggml-base-q8_0.bin?download=true"
+        ),
+        ModelSpec(
+            id = "small",
+            fileName = "ggml-small.bin",
+            url = HF_BASE + "ggml-small.bin?download=true"
+        ),
+        ModelSpec(
+            id = "small-q5",
+            fileName = "ggml-small-q5_1.bin",
+            url = HF_BASE + "ggml-small-q5_1.bin?download=true"
+        ),
+        ModelSpec(
+            id = "small-q8",
+            fileName = "ggml-small-q8_0.bin",
+            url = HF_BASE + "ggml-small-q8_0.bin?download=true"
         )
     )
 

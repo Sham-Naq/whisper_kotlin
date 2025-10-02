@@ -53,4 +53,15 @@ object WhisperEngine {
         val c = ctx ?: error("Model not loaded. Call loadModelFromAssets() first.")
         return c.transcribeData(samples)
     }
+
+    /** Transcribe 16k mono PCM16 WAV from an absolute file path. */
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun transcribeWavFile(path: String): String {
+        val input = java.io.File(path).inputStream()
+        input.use {
+            val (_, samples) = WavReader.readPcm16Mono16k(it)
+            val c = ctx ?: error("Model not loaded. Call loadModelFromAssets() first.")
+            return c.transcribeData(samples)
+        }
+    }
 }

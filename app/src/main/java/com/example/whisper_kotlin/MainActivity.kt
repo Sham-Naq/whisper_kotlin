@@ -28,6 +28,9 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +38,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.PopupPositionProvider
@@ -119,6 +123,8 @@ private fun HomeScreen() {
         // Content area
         // Track selected model from the selector so Transcription screen can use it
     var selectedModel by remember { mutableStateOf<ModelOption?>(null) }
+        // Track selected audio file/asset for transcription
+        var audioSource by remember { mutableStateOf<AudioSource>(AudioSource.Asset("samples/samples_jfk.wav")) }
         var isModelDownloading by remember { mutableStateOf(false) }
 
         Column(
@@ -136,6 +142,14 @@ private fun HomeScreen() {
                     onSelected = { opt -> selectedModel = opt },
                     onDownloadingChanged = { downloading -> isModelDownloading = downloading }
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+                FileSelectorRow(
+                    textColor = primaryTextColor,
+                    isDark = isDark,
+                    buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+                    source = audioSource,
+                    onSourceChanged = { audioSource = it }
+                )
                 Spacer(modifier = Modifier.height(8.dp))
             }
             NavHost(
@@ -148,6 +162,7 @@ private fun HomeScreen() {
                         modifier = Modifier.fillMaxSize(),
                         textColor = primaryTextColor,
                         selectedModel = selectedModel,
+                        audioSource = audioSource,
                         isModelDownloading = isModelDownloading
                     )
                 }
@@ -169,169 +184,128 @@ private fun HomeScreen() {
                     .height(1.dp)
                     .background(bottomBarDivider)
             )
-            val circleSizeDp = 80.dp
-            val itemSpacingDp = 8.dp
-            val rowHorizontalPaddingDp = 8.dp
-            val density = LocalDensity.current
-            var rowWidthPx by remember { mutableStateOf(0) }
-            var parentLeftInRoot by remember { mutableStateOf(0f) }
-            val centers = remember { mutableStateListOf(0f, 0f, 0f) }
             val route = currentRoute
-            val selectedIndex = when (route) {
-                BottomTab.Transcription.route -> 0
-                BottomTab.Recorder.route -> 1
-                BottomTab.Settings.route -> 2
-                else -> 0
-            }
-            val itemCount = 3
-            val circlePx = with(density) { circleSizeDp.toPx() }
-            val spacingPx = with(density) { itemSpacingDp.toPx() }
-            val padPx = with(density) { rowHorizontalPaddingDp.toPx() }
-            val totalSpacingPx = spacingPx * (itemCount - 1)
-            // Row width includes its horizontal padding; compute content width for children
-            val contentWidthPx = (rowWidthPx.toFloat() - padPx * 2f).coerceAtLeast(0f)
-            val childWidthPx = if (contentWidthPx > 0f) (contentWidthPx - totalSpacingPx) / itemCount else 0f
-            // Prefer precise centering using measured item centers; fallback to computed layout centers
-            val measuredCenter = centers.getOrNull(selectedIndex)?.takeIf { it > 0f }
-            val targetLeft = if (measuredCenter != null && parentLeftInRoot > 0f) {
-                measuredCenter - parentLeftInRoot - circlePx / 2f
-            } else if (childWidthPx > 0f) {
-                padPx + selectedIndex * (childWidthPx + spacingPx) + (childWidthPx - circlePx) / 2f
-            } else 0f
-            val animatedLeft by animateFloatAsState(
-                targetValue = targetLeft,
-                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
-                label = "navIndicatorX"
-            )
-
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(circleSizeDp + 8.dp)
-                    .onGloballyPositioned { parentLeftInRoot = it.positionInRoot().x }
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Sliding circular indicator
+                // Left item wrapper
                 Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .graphicsLayer { translationX = animatedLeft }
-                        .size(circleSizeDp)
-                        .background(activeIconColor.copy(alpha = 0.25f), CircleShape)
-                )
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val isSelected = route == BottomTab.Transcription.route
+                    val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleT")
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(activeIconColor.copy(alpha = 0.25f), CircleShape)
+                                .blur(18.dp)
+                        )
+                    }
+                    BottomNavItem(
+                        selected = isSelected,
+                        onClick = {
+                            if (!isSelected) {
+                                navController.navigate(BottomTab.Transcription.route) {
+                                    launchSingleTop = true
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        modifier = Modifier,
+                        selectedBgColor = navSelectedBg,
+                        unselectedBgColor = navUnselectedBg,
+                        selectedBorderColor = Color.Transparent,
+                        unselectedBorderColor = Color.Transparent,
+                        drawContainer = false
+                    ) {
+                        IconTranscription(
+                            color = if (isSelected) activeIconColor else inactiveIconColor,
+                            modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
+                        )
+                    }
+                }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.Center)
-                        .padding(horizontal = rowHorizontalPaddingDp, vertical = 4.dp)
-                        .onGloballyPositioned { rowWidthPx = it.size.width },
-                    horizontalArrangement = Arrangement.spacedBy(itemSpacingDp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Middle item wrapper
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
                 ) {
-            // Left item wrapper to capture its center
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .onGloballyPositioned { coords ->
-                        centers[0] = coords.positionInRoot().x + coords.size.width / 2f
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                val isSelected = route == BottomTab.Transcription.route
-                val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleT")
-                BottomNavItem(
-                selected = route == BottomTab.Transcription.route,
-                onClick = {
-                    if (route != BottomTab.Transcription.route) {
-                        navController.navigate(BottomTab.Transcription.route) {
-                            launchSingleTop = true
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            restoreState = true
-                        }
+                    val isSelected = route == BottomTab.Recorder.route
+                    val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleR")
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(activeIconColor.copy(alpha = 0.25f), CircleShape)
+                                .blur(18.dp)
+                        )
                     }
-                },
-                    modifier = Modifier,
-                    selectedBgColor = navSelectedBg,
-                    unselectedBgColor = navUnselectedBg,
-                    // Hide outlines for Transcription item
-                    selectedBorderColor = Color.Transparent,
-                    unselectedBorderColor = Color.Transparent,
-                    drawContainer = false
-                ) {
-                    IconTranscription(
-                        color = if (route == BottomTab.Transcription.route) activeIconColor else inactiveIconColor,
-                        modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
-                    )
-                }
-            }
-            // Middle item wrapper
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .onGloballyPositioned { coords ->
-                        centers[1] = coords.positionInRoot().x + coords.size.width / 2f
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                val isSelected = route == BottomTab.Recorder.route
-                val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleR")
-                BottomNavItem(
-                selected = route == BottomTab.Recorder.route,
-                onClick = {
-                    if (route != BottomTab.Recorder.route) {
-                        navController.navigate(BottomTab.Recorder.route) {
-                            launchSingleTop = true
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            restoreState = true
-                        }
+                    BottomNavItem(
+                        selected = isSelected,
+                        onClick = {
+                            if (!isSelected) {
+                                navController.navigate(BottomTab.Recorder.route) {
+                                    launchSingleTop = true
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        modifier = Modifier,
+                        drawContainer = false
+                    ) {
+                        IconRecorder(
+                            color = if (isSelected) activeIconColor else inactiveIconColor,
+                            modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
+                        )
                     }
-                },
-                    modifier = Modifier,
-                    // No rectangular container for the middle item
-                    drawContainer = false
-                ) {
-                    IconRecorder(
-                        color = if (route == BottomTab.Recorder.route) activeIconColor else inactiveIconColor,
-                        modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
-                    )
                 }
-            }
-            // Right item wrapper
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .onGloballyPositioned { coords ->
-                        centers[2] = coords.positionInRoot().x + coords.size.width / 2f
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                val isSelected = route == BottomTab.Settings.route
-                val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleS")
-                BottomNavItem(
-                selected = route == BottomTab.Settings.route,
-                onClick = {
-                    if (route != BottomTab.Settings.route) {
-                        navController.navigate(BottomTab.Settings.route) {
-                            launchSingleTop = true
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            restoreState = true
-                        }
+
+                // Right item wrapper
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val isSelected = route == BottomTab.Settings.route
+                    val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleS")
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(activeIconColor.copy(alpha = 0.25f), CircleShape)
+                                .blur(18.dp)
+                        )
                     }
-                },
-                    modifier = Modifier,
-                    selectedBgColor = navSelectedBg,
-                    unselectedBgColor = navUnselectedBg,
-                    // Hide outlines for Settings item
-                    selectedBorderColor = Color.Transparent,
-                    unselectedBorderColor = Color.Transparent,
-                    drawContainer = false
-                ) {
-                    IconSettings(
-                        color = if (route == BottomTab.Settings.route) activeIconColor else inactiveIconColor,
-                        modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
-                    )
-                }
-            }
+                    BottomNavItem(
+                        selected = isSelected,
+                        onClick = {
+                            if (!isSelected) {
+                                navController.navigate(BottomTab.Settings.route) {
+                                    launchSingleTop = true
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        modifier = Modifier,
+                        selectedBgColor = navSelectedBg,
+                        unselectedBgColor = navUnselectedBg,
+                        selectedBorderColor = Color.Transparent,
+                        unselectedBorderColor = Color.Transparent,
+                        drawContainer = false
+                    ) {
+                        IconSettings(
+                            color = if (isSelected) activeIconColor else inactiveIconColor,
+                            modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
+                        )
+                    }
                 }
             }
         }
@@ -411,6 +385,7 @@ private fun TranscriptionScreen(
     modifier: Modifier = Modifier,
     textColor: Color = Color(0xFF0D47A1),
     selectedModel: ModelOption? = null,
+    audioSource: AudioSource = AudioSource.Asset("samples/samples_jfk.wav"),
     isModelDownloading: Boolean = false
 ) {
     val ctx = LocalContext.current
@@ -444,12 +419,40 @@ private fun TranscriptionScreen(
                             "ggml-tiny-q5_1 (asset)"
                         }
                         val startNs = android.os.SystemClock.elapsedRealtimeNanos()
-                        val text = WhisperEngine.transcribeWavAsset(ctx, "samples/samples_jfk.wav")
+                        val text = when (val src = audioSource) {
+                            is AudioSource.Asset -> WhisperEngine.transcribeWavAsset(ctx, src.assetPath)
+                            is AudioSource.File -> WhisperEngine.transcribeWavFile(src.path)
+                        }
                         val elapsedMs = (android.os.SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
                         val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", elapsedMs / 1000.0) + " s (" + elapsedMs.toLong() + " ms)"
-                        append("Model: $modelLabel\nTranscript:\n$text\n$timeLine")
+                        val fileLabel = when (val src = audioSource) {
+                            is AudioSource.Asset -> src.assetPath.substringAfterLast('/')
+                            is AudioSource.File -> java.io.File(src.path).name
+                        }
+                        append("File: $fileLabel\nModel: $modelLabel\nTranscript:\n$text\n$timeLine")
                     } catch (t: Throwable) {
                         append("Transcribe failed: ${'$'}t")
+                    }
+                }
+            }
+            ActionButton("Delete model", textColor) {
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val chosen = selectedModel
+                        if (chosen == null) {
+                            append("No model selected to delete.")
+                            return@launch
+                        }
+                        val file = ModelManager.getLocalModelFile(ctx, chosen.fileName)
+                        if (file.exists()) {
+                            val ok = file.delete()
+                            WhisperEngine.reset()
+                            append(if (ok) "Deleted model: ${'$'}{file.name}" else "Failed to delete: ${'$'}{file.name}")
+                        } else {
+                            append("Model not found locally: ${'$'}{chosen.fileName}")
+                        }
+                    } catch (t: Throwable) {
+                        append("Delete failed: ${'$'}t")
                     }
                 }
             }
@@ -499,6 +502,12 @@ private fun SettingsScreen(modifier: Modifier = Modifier, textColor: Color = Col
 // --- Model selector UI ---
 
 private data class ModelOption(val id: String, val fileName: String, val url: String)
+
+// --- Audio source model ---
+private sealed class AudioSource {
+    data class Asset(val assetPath: String): AudioSource()
+    data class File(val path: String): AudioSource()
+}
 
 @Composable
 private fun ModelSelectorRow(
@@ -736,5 +745,118 @@ private fun CancelIcon(color: Color, modifier: Modifier = Modifier.size(12.dp)) 
         // Draw an X
         drawLine(color = color, start = Offset(0f, 0f), end = Offset(w, h), strokeWidth = stroke)
         drawLine(color = color, start = Offset(w, 0f), end = Offset(0f, h), strokeWidth = stroke)
+    }
+}
+
+@Composable
+private fun FileSelectorRow(
+    textColor: Color,
+    isDark: Boolean,
+    buttonBg: Color,
+    source: AudioSource,
+    onSourceChanged: (AudioSource) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val cachedDir = remember { java.io.File(ctx.cacheDir, "uploads").apply { mkdirs() } }
+    // Cached files shown in dropdown
+    val cachedFiles = remember {
+        mutableStateListOf<java.io.File>().apply { addAll(cachedDir.listFiles()?.toList() ?: emptyList()) }
+    }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val name = runCatching {
+                        val c = ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                        c?.use { if (it.moveToFirst()) it.getString(0) else null }
+                    }.getOrNull() ?: ("upload_" + System.currentTimeMillis() + ".wav")
+                    val target = java.io.File(cachedDir, name)
+                    ctx.contentResolver.openInputStream(uri)?.use { ins ->
+                        target.outputStream().use { outs -> ins.copyTo(outs) }
+                    }
+                    onSourceChanged(AudioSource.File(target.absolutePath))
+                    // Update the reactive list so the new file appears immediately
+                    if (cachedFiles.none { it.absolutePath == target.absolutePath }) {
+                        cachedFiles.add(0, target)
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    // Build dropdown options: default JFK asset, any cached files, then Upload action
+    // cachedFiles declared above
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = when (source) {
+        is AudioSource.Asset -> source.assetPath.substringAfterLast('/')
+        is AudioSource.File -> java.io.File(source.path).name
+    }
+
+    var anchorBounds by remember { mutableStateOf(Rect.Zero) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(
+                modifier = Modifier
+                    .background(buttonBg, RoundedCornerShape(8.dp))
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) { BasicText("Select file", style = TextStyle(color = textColor, fontWeight = FontWeight.Medium)) }
+
+            BasicText(selectedLabel, style = TextStyle(color = textColor), modifier = Modifier.onGloballyPositioned { anchorBounds = it.boundsInWindow() })
+        }
+
+        if (expanded) {
+            val cardBg = if (isDark) Color(0xFF232323) else Color(0xFFFFFFFF)
+            val border = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0)
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(anchorBounds.left.toInt(), anchorBounds.bottom.toInt()),
+                properties = PopupProperties(focusable = true),
+                onDismissRequest = { expanded = false }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .background(cardBg, RoundedCornerShape(10.dp))
+                        .border(1.dp, border, RoundedCornerShape(10.dp))
+                        .padding(vertical = 6.dp)
+                        .width(200.dp)
+                ) {
+                    // Default JFK asset
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            onSourceChanged(AudioSource.Asset("samples/samples_jfk.wav"))
+                            expanded = false
+                        }.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) { BasicText("samples_jfk.wav", style = TextStyle(color = textColor)) }
+
+                    // Cached files
+                    cachedFiles.forEach { f ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                onSourceChanged(AudioSource.File(f.absolutePath))
+                                expanded = false
+                            }.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) { BasicText(f.name, style = TextStyle(color = textColor)) }
+                    }
+
+                    // Upload action (SAF)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            expanded = false
+                            launcher.launch("audio/*")
+                        }.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) { BasicText("Upload…", style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)) }
+                }
+            }
+        }
     }
 }
