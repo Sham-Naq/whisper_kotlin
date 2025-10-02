@@ -1,6 +1,6 @@
 # Whisper Kotlin Android Boilerplate
 
-A minimal Android app skeleton using Kotlin with optional NDK/CMake wiring. Files are placeholders for you to fill later.
+A minimal Android app skeleton using Kotlin
 
 ## Structure
 - `settings.gradle.kts` — Gradle project settings

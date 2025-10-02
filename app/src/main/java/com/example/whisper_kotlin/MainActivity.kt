@@ -133,8 +133,8 @@ private fun HomeScreen() {
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Show model selector under the header only on the Transcription page
-            if (currentRoute == BottomTab.Transcription.route) {
+            // Show model selector under the header on Transcription and Recorder pages
+            if (currentRoute == BottomTab.Transcription.route || currentRoute == BottomTab.Recorder.route) {
                 ModelSelectorRow(
                     textColor = primaryTextColor,
                     isDark = isDark,
@@ -143,14 +143,16 @@ private fun HomeScreen() {
                     onDownloadingChanged = { downloading -> isModelDownloading = downloading }
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                FileSelectorRow(
-                    textColor = primaryTextColor,
-                    isDark = isDark,
-                    buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
-                    source = audioSource,
-                    onSourceChanged = { audioSource = it }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                if (currentRoute == BottomTab.Transcription.route) {
+                    FileSelectorRow(
+                        textColor = primaryTextColor,
+                        isDark = isDark,
+                        buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+                        source = audioSource,
+                        onSourceChanged = { audioSource = it }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
             NavHost(
                 navController = navController,
@@ -166,7 +168,13 @@ private fun HomeScreen() {
                         isModelDownloading = isModelDownloading
                     )
                 }
-                composable(BottomTab.Recorder.route) { RecorderScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
+                composable(BottomTab.Recorder.route) {
+                    com.example.whisper_kotlin.recorder.RecorderScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        isDark = isDark,
+                        textColor = primaryTextColor
+                    )
+                }
                 composable(BottomTab.Settings.route) { SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
             }
         }
@@ -475,17 +483,7 @@ private fun ActionButton(label: String, color: Color, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun RecorderScreen(modifier: Modifier = Modifier, textColor: Color = Color(0xFF0D47A1)) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        BasicText("Recorder", style = TextStyle(color = textColor))
-        // Future: recorder controls
-    }
-}
+// Recorder screen lives in recorder/RecorderScreen.kt
 
 @Composable
 private fun SettingsScreen(modifier: Modifier = Modifier, textColor: Color = Color(0xFF0D47A1)) {
@@ -726,10 +724,7 @@ private fun PreviewTranscriptionScreen() {
     TranscriptionScreen(modifier = Modifier.fillMaxSize())
 }
 
-@Composable
-private fun PreviewRecorderScreen() {
-    RecorderScreen(modifier = Modifier.fillMaxSize())
-}
+// Preview of recorder screen is defined in its own file if needed
 
 @Composable
 private fun PreviewSettingsScreen() {
