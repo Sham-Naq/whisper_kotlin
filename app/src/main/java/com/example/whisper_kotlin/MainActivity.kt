@@ -56,6 +56,8 @@ import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.whisper_kotlin.TranscriptionViewModel
 // Material icons for bottom navigation
 import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
@@ -63,6 +65,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 
 class MainActivity : ComponentActivity() {
@@ -107,6 +110,9 @@ private fun HomeScreen() {
     // Recorder command plumbing between nav bar mic and RecorderScreen
     var recorderCommand by remember { mutableStateOf<com.example.whisper_kotlin.recorder.RecorderCommand?>(null) }
     var isRecording by remember { mutableStateOf(false) }
+    var isRecorderPaused by remember { mutableStateOf(false) }
+
+    val transcriptionViewModel: TranscriptionViewModel = viewModel()
 
     Column(modifier = Modifier.fillMaxSize().background(background)) {
         // Top header
@@ -178,7 +184,8 @@ private fun HomeScreen() {
                         textColor = primaryTextColor,
                         selectedModel = selectedModel,
                         audioSource = audioSource,
-                        isModelDownloading = isModelDownloading
+                        isModelDownloading = isModelDownloading,
+                        viewModel = transcriptionViewModel
                     )
                 }
                 composable(BottomTab.Recorder.route) {
@@ -188,7 +195,12 @@ private fun HomeScreen() {
                         textColor = primaryTextColor,
                         command = recorderCommand,
                         onCommandHandled = { recorderCommand = null },
-                        onRecordingStateChanged = { isRecording = it }
+                        onRecordingStateChanged = {
+                            isRecording = it
+                            if (!it) {
+                                isRecorderPaused = false
+                            }
+                        }
                     )
                 }
                 composable(BottomTab.Settings.route) { SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
@@ -283,12 +295,15 @@ private fun HomeScreen() {
                                         popUpTo(navController.graph.startDestinationId) { saveState = true }
                                         restoreState = true
                                     }
+                                    isRecorderPaused = false
                                 } else {
                                     // if already on Recorder, toggle start/stop
-                                    recorderCommand = if (isRecording) {
-                                        com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe
+                                    if (isRecording) {
+                                        isRecorderPaused = false
+                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe
                                     } else {
-                                        com.example.whisper_kotlin.recorder.RecorderCommand.Start
+                                        isRecorderPaused = false
+                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Start
                                     }
                                 }
                             },
@@ -304,9 +319,11 @@ private fun HomeScreen() {
 
                     // When recording, show Pause and Stop floating controls above the mic
                     if (isRecorder && isRecording) {
+                        val pauseIcon = if (isRecorderPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause
+                        val pauseDescription = if (isRecorderPaused) "Resume" else "Pause"
                         Row(
                             modifier = Modifier
-                                .offset(y = (-96).dp),
+                                .offset(y = (-210).dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -315,12 +332,20 @@ private fun HomeScreen() {
                                 modifier = Modifier
                                     .size(52.dp)
                                     .background(Color(0xFF424242), CircleShape)
-                                    .clickable { recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Pause },
+                                    .clickable {
+                                        if (isRecorderPaused) {
+                                            isRecorderPaused = false
+                                            recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Resume
+                                        } else {
+                                            isRecorderPaused = true
+                                            recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Pause
+                                        }
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
                                 androidx.compose.material.Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Filled.Pause,
-                                    contentDescription = "Pause",
+                                    imageVector = pauseIcon,
+                                    contentDescription = pauseDescription,
                                     tint = Color.White
                                 )
                             }
@@ -329,7 +354,10 @@ private fun HomeScreen() {
                                 modifier = Modifier
                                     .size(52.dp)
                                     .background(Color(0xFFE53935), CircleShape)
-                                    .clickable { recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe },
+                                    .clickable {
+                                        isRecorderPaused = false
+                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
                                 androidx.compose.material.Icon(
