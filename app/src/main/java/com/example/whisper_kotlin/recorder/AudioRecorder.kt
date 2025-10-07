@@ -30,6 +30,7 @@ class AudioRecorder(
     private var record: AudioRecord? = null
     private var job: Job? = null
     private var output: java.io.OutputStream? = null
+    @Volatile private var paused: Boolean = false
 
     private val _bars = MutableStateFlow(FloatArray(barCount) { 0f })
     val bars: StateFlow<FloatArray> = _bars
@@ -58,6 +59,11 @@ class AudioRecorder(
             val values = FloatArray(barCount)
             var barIdx = 0
             while (isActive && record?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                if (paused) {
+                    // still read to keep buffer from blocking, but don't write or update bars
+                    rec.read(buf, 0, buf.size)
+                    continue
+                }
                 val n = rec.read(buf, 0, buf.size)
                 if (n <= 0) continue
                 // optionally write shorts as little-endian bytes
@@ -88,6 +94,9 @@ class AudioRecorder(
             }
         }
     }
+
+    fun pause() { paused = true }
+    fun resume() { paused = false }
 
     suspend fun stop() {
         job?.cancelAndJoin()

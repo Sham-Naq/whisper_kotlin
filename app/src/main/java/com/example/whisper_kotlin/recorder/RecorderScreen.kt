@@ -23,6 +23,9 @@ fun RecorderScreen(
     modifier: Modifier = Modifier,
     isDark: Boolean,
     textColor: Color,
+    command: RecorderCommand? = null,
+    onCommandHandled: () -> Unit = {},
+    onRecordingStateChanged: (Boolean) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -52,6 +55,65 @@ fun RecorderScreen(
     }
     val bars by recorder.bars.collectAsState()
 
+    // React to external commands
+    LaunchedEffect(command) {
+        when (command) {
+            is RecorderCommand.Start -> {
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasPermission) {
+                    startRecording()
+                    onRecordingStateChanged(true)
+                } else {
+                    requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
+                onCommandHandled()
+            }
+            is RecorderCommand.Pause -> {
+                if (isRecording) {
+                    recorder.pause()
+                    onRecordingStateChanged(true)
+                }
+                onCommandHandled()
+            }
+            is RecorderCommand.Resume -> {
+                if (isRecording) {
+                    recorder.resume()
+                    onRecordingStateChanged(true)
+                }
+                onCommandHandled()
+            }
+            is RecorderCommand.StopAndTranscribe -> {
+                if (isRecording) {
+                    // mirror the stop click
+                    scope.launch(Dispatchers.IO) {
+                        recorder.stop()
+                        val rf = rawFile
+                        if (rf != null && rf.exists() && rf.length() > 0) {
+                            val wf = java.io.File(cacheDir, rf.nameWithoutExtension + ".wav")
+                            try {
+                                WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
+                                wavFile = wf
+                                val text = WhisperEngine.transcribeWavFile(wf.absolutePath)
+                                transcript = text
+                            } catch (t: Throwable) {
+                                transcript = "Transcription failed: ${'$'}t"
+                            }
+                        } else {
+                            transcript = "No audio captured"
+                        }
+                    }
+                    isRecording = false
+                    onRecordingStateChanged(false)
+                }
+                onCommandHandled()
+            }
+            null -> {}
+        }
+    }
+
     Column(modifier = modifier.padding(16.dp)) {
         // Waveform area
         LineBarWaveform(
@@ -66,51 +128,8 @@ fun RecorderScreen(
 
         Spacer(Modifier.weight(1f))
 
-        // Record / Stop & Transcribe controls
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val btnColor = if (isRecording) Color(0xFFE53935) else (if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5))
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .background(btnColor, CircleShape)
-                    .clickable {
-                        if (!isRecording) {
-                            val hasPermission = ContextCompat.checkSelfPermission(
-                                context,
-                                android.Manifest.permission.RECORD_AUDIO
-                            ) == PackageManager.PERMISSION_GRANTED
-                            if (hasPermission) {
-                                startRecording()
-                            } else {
-                                // Ask for mic permission; recording will start on grant
-                                requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                            }
-                        } else {
-                            scope.launch(Dispatchers.IO) {
-                                recorder.stop()
-                                // Convert raw PCM to WAV
-                                val rf = rawFile
-                                if (rf != null && rf.exists() && rf.length() > 0) {
-                                    val wf = java.io.File(cacheDir, rf.nameWithoutExtension + ".wav")
-                                    try {
-                                        WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
-                                        wavFile = wf
-                                        // Transcribe
-                                        val text = WhisperEngine.transcribeWavFile(wf.absolutePath)
-                                        transcript = text
-                                    } catch (t: Throwable) {
-                                        transcript = "Transcription failed: ${'$'}t"
-                                    }
-                                } else {
-                                    transcript = "No audio captured"
-                                }
-                            }
-                            isRecording = false
-                        }
-                    }
-            )
-        }
-        Spacer(Modifier.height(24.dp))
+        // The actual Start/Stop control is driven by the nav mic overlay; spacer keeps layout similar
+        Spacer(Modifier.height(96.dp))
         // Transcript output
         transcript?.let { text ->
             androidx.compose.foundation.text.BasicText(

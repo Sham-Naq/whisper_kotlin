@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -54,6 +56,14 @@ import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+// Material icons for bottom navigation
+import androidx.compose.material.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Stop
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +103,10 @@ private fun HomeScreen() {
     val navUnselectedBorder = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE0E0E0)
     val activeIconColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5)
     val inactiveIconColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF888888)
+
+    // Recorder command plumbing between nav bar mic and RecorderScreen
+    var recorderCommand by remember { mutableStateOf<com.example.whisper_kotlin.recorder.RecorderCommand?>(null) }
+    var isRecording by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().background(background)) {
         // Top header
@@ -171,7 +185,10 @@ private fun HomeScreen() {
                     com.example.whisper_kotlin.recorder.RecorderScreen(
                         modifier = Modifier.fillMaxSize(),
                         isDark = isDark,
-                        textColor = primaryTextColor
+                        textColor = primaryTextColor,
+                        command = recorderCommand,
+                        onCommandHandled = { recorderCommand = null },
+                        onRecordingStateChanged = { isRecording = it }
                     )
                 }
                 composable(BottomTab.Settings.route) { SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
@@ -199,21 +216,13 @@ private fun HomeScreen() {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left item wrapper
+                // Left item wrapper (Transcriptions)
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     val isSelected = route == BottomTab.Transcription.route
                     val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleT")
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(activeIconColor.copy(alpha = 0.25f), CircleShape)
-                                .blur(18.dp)
-                        )
-                    }
                     BottomNavItem(
                         selected = isSelected,
                         onClick = {
@@ -232,64 +241,114 @@ private fun HomeScreen() {
                         unselectedBorderColor = Color.Transparent,
                         drawContainer = false
                     ) {
-                        IconTranscription(
-                            color = if (isSelected) activeIconColor else inactiveIconColor,
-                            modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
+                        Icon(
+                            imageVector = Icons.Filled.Folder,
+                            contentDescription = "Transcriptions",
+                            tint = if (isSelected) activeIconColor else inactiveIconColor,
+                            modifier = Modifier.size(42.dp).graphicsLayer(scaleX = scale, scaleY = scale)
                         )
                     }
                 }
 
-                // Middle item wrapper
+                // Middle item wrapper (Recorder) - always circular mic; glides up when Recorder is selected
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    val isSelected = route == BottomTab.Recorder.route
-                    val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleR")
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(activeIconColor.copy(alpha = 0.25f), CircleShape)
-                                .blur(18.dp)
+                    val isRecorder = route == BottomTab.Recorder.route
+                    val offsetY by animateDpAsState(
+                        targetValue = if (isRecorder) (-24).dp else 0.dp,
+                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                        label = "micOffset"
+                    )
+                    val circleSize by animateDpAsState(
+                        targetValue = if (isRecorder) 64.dp else 56.dp,
+                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                        label = "micSize"
+                    )
+                    val circleColor by animateColorAsState(
+                        targetValue = if (isRecorder) activeIconColor else Color.Transparent,
+                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                        label = "micBg"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .offset(y = offsetY)
+                            .size(circleSize)
+                            .background(circleColor, CircleShape)
+                            .clickable {
+                                if (!isRecorder) {
+                                    navController.navigate(BottomTab.Recorder.route) {
+                                        launchSingleTop = true
+                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        restoreState = true
+                                    }
+                                } else {
+                                    // if already on Recorder, toggle start/stop
+                                    recorderCommand = if (isRecording) {
+                                        com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe
+                                    } else {
+                                        com.example.whisper_kotlin.recorder.RecorderCommand.Start
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Mic,
+                            contentDescription = "Recorder",
+                            tint = if (isRecorder) Color.White else inactiveIconColor,
+                            modifier = Modifier.size(42.dp)
                         )
                     }
-                    BottomNavItem(
-                        selected = isSelected,
-                        onClick = {
-                            if (!isSelected) {
-                                navController.navigate(BottomTab.Recorder.route) {
-                                    launchSingleTop = true
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    restoreState = true
-                                }
+
+                    // When recording, show Pause and Stop floating controls above the mic
+                    if (isRecorder && isRecording) {
+                        Row(
+                            modifier = Modifier
+                                .offset(y = (-96).dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Pause button
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(Color(0xFF424242), CircleShape)
+                                    .clickable { recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Pause },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                androidx.compose.material.Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.Pause,
+                                    contentDescription = "Pause",
+                                    tint = Color.White
+                                )
                             }
-                        },
-                        modifier = Modifier,
-                        drawContainer = false
-                    ) {
-                        IconRecorder(
-                            color = if (isSelected) activeIconColor else inactiveIconColor,
-                            modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
-                        )
+                            // Stop button
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(Color(0xFFE53935), CircleShape)
+                                    .clickable { recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                androidx.compose.material.Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.Stop,
+                                    contentDescription = "Stop",
+                                    tint = Color.White
+                                )
+                            }
+                        }
                     }
                 }
 
-                // Right item wrapper
+                // Right item wrapper (Settings)
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     val isSelected = route == BottomTab.Settings.route
                     val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleS")
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(activeIconColor.copy(alpha = 0.25f), CircleShape)
-                                .blur(18.dp)
-                        )
-                    }
                     BottomNavItem(
                         selected = isSelected,
                         onClick = {
@@ -308,9 +367,11 @@ private fun HomeScreen() {
                         unselectedBorderColor = Color.Transparent,
                         drawContainer = false
                     ) {
-                        IconSettings(
-                            color = if (isSelected) activeIconColor else inactiveIconColor,
-                            modifier = Modifier.size(28.dp).graphicsLayer(scaleX = scale, scaleY = scale)
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Settings",
+                            tint = if (isSelected) activeIconColor else inactiveIconColor,
+                            modifier = Modifier.size(42.dp).graphicsLayer(scaleX = scale, scaleY = scale)
                         )
                     }
                 }
@@ -347,42 +408,5 @@ private fun BottomNavItem(
         contentAlignment = Alignment.Center
     ) {
         content()
-    }
-}
-
-@Composable
-private fun IconTranscription(color: Color = Color(0xFF111111), modifier: Modifier = Modifier.size(24.dp)) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val lineH = h * 0.16f
-        val gap = h * 0.14f
-        val radius = CornerRadius(lineH / 2, lineH / 2)
-        drawRoundRect(color = color, topLeft = Offset(0f, 0f), size = Size(w, lineH), cornerRadius = radius)
-        drawRoundRect(color = color, topLeft = Offset(0f, lineH + gap), size = Size(w, lineH), cornerRadius = radius)
-        drawRoundRect(color = color, topLeft = Offset(0f, (lineH + gap) * 2), size = Size(w, lineH), cornerRadius = radius)
-    }
-}
-
-@Composable
-private fun IconRecorder(color: Color = Color(0xFF111111), modifier: Modifier = Modifier.size(24.dp)) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val barW = w / 5f
-        drawRoundRect(color, topLeft = Offset(0f, h * 0.4f), size = Size(barW, h * 0.6f), cornerRadius = CornerRadius(barW / 2, barW / 2))
-        drawRoundRect(color, topLeft = Offset(barW * 2, h * 0.2f), size = Size(barW, h * 0.8f), cornerRadius = CornerRadius(barW / 2, barW / 2))
-        drawRoundRect(color, topLeft = Offset(barW * 4, h * 0.35f), size = Size(barW, h * 0.65f), cornerRadius = CornerRadius(barW / 2, barW / 2))
-    }
-}
-
-@Composable
-private fun IconSettings(color: Color = Color(0xFF111111), modifier: Modifier = Modifier.size(24.dp)) {
-    Canvas(modifier = modifier) {
-        val r = size.minDimension / 2.5f
-        // outer ring
-        drawCircle(color = color, radius = r, style = androidx.compose.ui.graphics.drawscope.Stroke(width = r * 0.25f))
-        // inner dot
-        drawCircle(color = color, radius = r * 0.25f)
     }
 }
