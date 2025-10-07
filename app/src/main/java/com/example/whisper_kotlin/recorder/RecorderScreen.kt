@@ -36,6 +36,7 @@ import com.example.whisper_kotlin.ActionButton
 import com.example.whisper_kotlin.AudioSource
 import com.example.whisper_kotlin.ModelOption
 import com.example.whisper_kotlin.ModelSelectorRow
+import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.TranscriptionViewModel
 import com.example.whisper_kotlin.FileSelectorRow
 import kotlinx.coroutines.Dispatchers
@@ -224,13 +225,36 @@ fun RecorderScreen(
     val canPlayRecording = wavFile != null && mediaPlayer != null && playbackDurationMs > 0
     val canTranscribe = !isRecording && !transcriptionUi.isTranscribing && (!isModelDownloading)
 
+    val modelDownloadVm: ModelDownloadViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val modelDownloadState by modelDownloadVm.uiState.collectAsState()
+
+    LaunchedEffect(selectedModel) {
+        // Keep external selection in sync when coming back
+        if (selectedModel != null && modelDownloadState.selectedModel?.id != selectedModel.id) {
+            modelDownloadVm.selectIfPresent(context, selectedModel)
+        }
+    }
+
     Column(modifier = modifier.padding(16.dp)) {
         ModelSelectorRow(
             textColor = textColor,
             isDark = isDark,
             buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
-            onSelected = onSelectModel,
-            onDownloadingChanged = onModelDownloadingChanged
+            selectedModel = modelDownloadState.selectedModel ?: selectedModel,
+            downloadingId = modelDownloadState.downloadingId,
+            progressPct = modelDownloadState.progressPct,
+            onSelectModel = {
+                onSelectModel(it)
+                modelDownloadVm.selectIfPresent(context, it)
+            },
+            onRequestDownload = { opt ->
+                onModelDownloadingChanged(true)
+                modelDownloadVm.startDownloadOrSelect(context, opt)
+            },
+            onCancelDownload = {
+                modelDownloadVm.cancelDownload()
+                onModelDownloadingChanged(false)
+            }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -329,7 +353,7 @@ fun RecorderScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             ActionButton(
-                label = if (wavFile != null) "Transcribe recording" else "Transcribe selection",
+                label = if (wavFile != null) "Transcribe recording" else "Transcribe file",
                 color = textColor,
                 enabled = canTranscribe
             ) {

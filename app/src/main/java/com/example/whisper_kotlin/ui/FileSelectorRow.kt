@@ -6,23 +6,35 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.runtime.*
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,13 +95,12 @@ fun FileSelectorRow(
     }
 
     var expanded by remember { mutableStateOf(false) }
+    var labelSize by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
     val selectedLabel = when (source) {
         is AudioSource.Asset -> source.assetPath.substringAfterLast('/')
         is AudioSource.File -> java.io.File(source.path).name
     }
-
-    // Anchor for popup
-    var anchorBounds by remember { mutableStateOf(Rect.Zero) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -106,75 +117,61 @@ fun FileSelectorRow(
                 BasicText("Select file", style = TextStyle(color = textColor, fontWeight = FontWeight.Medium))
             }
 
-            BasicText(
-                selectedLabel,
-                style = TextStyle(color = textColor),
-                modifier = Modifier.onGloballyPositioned { anchorBounds = it.boundsInWindow() }
-            )
-        }
+            val menuWidth = remember(labelSize, density) {
+                val width = with(density) { labelSize.width.toDp() }
+                if (width < 220.dp) 220.dp else width
+            }
 
-        if (expanded) {
-            val cardBg = if (isDark) Color(0xFF232323) else Color(0xFFFFFFFF)
-            val border = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0)
-
-            Popup(
-                alignment = Alignment.TopStart,
-                offset = IntOffset(anchorBounds.left.toInt(), anchorBounds.bottom.toInt()),
-                properties = PopupProperties(focusable = true),
-                onDismissRequest = { expanded = false }
+            Box(
+                modifier = Modifier
+                    .onGloballyPositioned { coordinates -> labelSize = coordinates.size }
+                    .clickable { expanded = !expanded }
             ) {
-                Column(
+                BasicText(
+                    text = selectedLabel,
+                    style = TextStyle(color = textColor)
+                )
+
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
                     modifier = Modifier
-                        .background(cardBg, RoundedCornerShape(10.dp))
-                        .border(1.dp, border, RoundedCornerShape(10.dp))
-                        .padding(vertical = 6.dp)
-                        .width(200.dp)
+                        .width(menuWidth)
+                        .background(
+                            color = if (isDark) Color(0xFF232323) else Color.White,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0),
+                            shape = RoundedCornerShape(10.dp)
+                        ),
+                    offset = DpOffset(x = 0.dp, y = 4.dp)
                 ) {
-                    // Default JFK asset
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSourceChanged(AudioSource.Asset("samples/samples_jfk.wav"))
-                                expanded = false
-                            }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    DropdownMenuItem(onClick = {
+                        onSourceChanged(AudioSource.Asset("samples/samples_jfk.wav"))
+                        expanded = false
+                    }) {
                         BasicText("samples_jfk.wav", style = TextStyle(color = textColor))
                     }
 
-                    // Cached files
-                    cachedFiles.forEach { f ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onSourceChanged(AudioSource.File(f.absolutePath))
-                                    expanded = false
-                                }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            BasicText(f.name, style = TextStyle(color = textColor))
+                    cachedFiles.forEach { file ->
+                        DropdownMenuItem(onClick = {
+                            onSourceChanged(AudioSource.File(file.absolutePath))
+                            expanded = false
+                        }) {
+                            BasicText(file.name, style = TextStyle(color = textColor))
                         }
                     }
 
-                    // Upload action (SAF)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                expanded = false
-                                launcher.launch("audio/*")
-                            }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        BasicText("Upload…", style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold))
+                    DropdownMenuItem(onClick = {
+                        expanded = false
+                        launcher.launch("audio/*")
+                    }) {
+                        BasicText(
+                            "Upload…",
+                            style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                        )
                     }
                 }
             }

@@ -24,7 +24,7 @@ fun LineBarWaveform(
         for (i in 0 until n) {
             val x = i * (barW + gap)
             val v = bars[i].coerceIn(0f, 1f)
-            val barH = (h * (0.1f + 0.9f * v))
+            val barH = (h * (0.02f + 0.98f * v))
             val y0 = (h - barH) / 2f
             val y1 = y0 + barH
             drawLine(color, start = Offset(x + barW / 2f, y0), end = Offset(x + barW / 2f, y1), strokeWidth = barW)

@@ -60,6 +60,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.whisper_kotlin.TranscriptionViewModel
+import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.data.TranscriptionRepository
 // Material icons for bottom navigation
 import androidx.compose.material.Icon
@@ -127,6 +128,8 @@ private fun HomeScreen() {
     var selectedModel by remember { mutableStateOf<ModelOption?>(null) }
     var audioSource by remember { mutableStateOf<AudioSource>(AudioSource.Asset("samples/samples_jfk.wav")) }
     var isModelDownloading by remember { mutableStateOf(false) }
+
+    val modelDownloadViewModel: ModelDownloadViewModel = viewModel()
 
     Column(modifier = Modifier.fillMaxSize().background(background)) {
         Box(

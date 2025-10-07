@@ -13,6 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sqrt
 
 /** Simple microphone recorder that emits normalized amplitude bars with EMA smoothing. */
 class AudioRecorder(
@@ -36,7 +37,8 @@ class AudioRecorder(
     val bars: StateFlow<FloatArray> = _bars
 
     private var ema: FloatArray = FloatArray(barCount) { 0f }
-    private val alpha = 0.38f // smoothing factor (higher = more responsive)
+    private val alpha = 0.45f // smoothing factor (higher = more responsive)
+    private val visualizationGain = 1.8f
 
     fun start(outputRawFile: java.io.File? = null) {
         if (job != null) return
@@ -79,7 +81,8 @@ class AudioRecorder(
                     count++
                     if (count >= window) {
                         val avg = (accAbs.toFloat() / count) / 32768f
-                        values[barIdx % barCount] = avg.coerceIn(0f, 1f)
+                        val boosted = (avg * visualizationGain).coerceIn(0f, 1f)
+                        values[barIdx % barCount] = sqrt(boosted)
                         accAbs = 0
                         count = 0
                         barIdx++

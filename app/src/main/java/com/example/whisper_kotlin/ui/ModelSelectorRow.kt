@@ -37,8 +37,12 @@ fun ModelSelectorRow(
     textColor: Color,
     isDark: Boolean,
     buttonBg: Color,
-    onSelected: (ModelOption) -> Unit,
-    onDownloadingChanged: (Boolean) -> Unit,
+    selectedModel: ModelOption?,
+    downloadingId: String?,
+    progressPct: Int,
+    onSelectModel: (ModelOption) -> Unit,
+    onRequestDownload: (ModelOption) -> Unit,
+    onCancelDownload: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -49,9 +53,7 @@ fun ModelSelectorRow(
         }
     }
     var expanded by remember { mutableStateOf(false) }
-    var selectedId by rememberSaveable { mutableStateOf(options.firstOrNull()?.id ?: "whisper-tiny") }
-    var downloadingId by remember { mutableStateOf<String?>(null) }
-    var progressPct by remember { mutableStateOf(0) }
+    var localSelectedId by rememberSaveable { mutableStateOf(selectedModel?.id ?: options.firstOrNull()?.id ?: "whisper-tiny") }
 
     // Anchor bounds in window coordinates for popup placement
     var anchorBounds by remember { mutableStateOf(Rect.Zero) }
@@ -78,7 +80,11 @@ fun ModelSelectorRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BasicText(
-                    text = if (downloadingId != null) "Downloading ${downloadingId}… ${progressPct}%" else selectedId,
+                    text = when {
+                        downloadingId != null -> "Downloading ${downloadingId}… ${progressPct}%"
+                        selectedModel != null -> selectedModel.id
+                        else -> localSelectedId
+                    },
                     style = TextStyle(color = textColor),
                     modifier = Modifier.onGloballyPositioned { coords ->
                         anchorBounds = coords.boundsInWindow()
@@ -89,7 +95,7 @@ fun ModelSelectorRow(
                     Box(
                         modifier = Modifier
                             .size(18.dp)
-                            .clickable { ModelManager.cancelDownload(downloadingId!!) },
+                            .clickable { onCancelDownload() },
                         contentAlignment = Alignment.Center
                     ) {
                         CancelIcon(color = textColor)
@@ -150,51 +156,11 @@ fun ModelSelectorRow(
                                 .fillMaxWidth()
                                 .clickable(enabled = downloadingId == null) {
                                     if (isDownloaded) {
-                                        selectedId = opt.id
-                                        onSelected(opt)
+                                        localSelectedId = opt.id
+                                        onSelectModel(opt)
                                         expanded = false
-                                        // Load ggml model immediately on selection if present (force to switch models)
-                                        scope.launch(Dispatchers.IO) {
-                                            try {
-                                                val modelFile = ModelManager.getLocalModelFile(ctx, opt.fileName)
-                                                if (modelFile.exists() && modelFile.length() > 0L) {
-                                                    WhisperEngine.loadModelFromFile(modelFile.absolutePath, force = true)
-                                                }
-                                            } catch (_: Throwable) {}
-                                        }
                                     } else {
-                                        // Start download
-                                        downloadingId = opt.id
-                                        progressPct = 0
-                                        onDownloadingChanged(true)
-                                        scope.launch(Dispatchers.IO) {
-                                            try {
-                                                ModelManager.ensureModel(
-                                                    context = ctx,
-                                                    modelFileName = opt.fileName,
-                                                    modelUrl = opt.url,
-                                                    onProgress = { p ->
-                                                        val pct = if (p.totalBytes > 0) ((p.bytesRead * 100L) / p.totalBytes).toInt() else 0
-                                                        progressPct = pct.coerceIn(0, 100)
-                                                    }
-                                                )
-                                                selectedId = opt.id
-                                                onSelected(opt)
-                                                // After download completes, load ggml model (force to switch models)
-                                                val modelFile = ModelManager.getLocalModelFile(ctx, opt.fileName)
-                                                if (modelFile.exists() && modelFile.length() > 0L) {
-                                                    WhisperEngine.loadModelFromFile(modelFile.absolutePath, force = true)
-                                                }
-                                            } catch (ce: java.util.concurrent.CancellationException) {
-                                                // Optional: could set a transient "Canceled" message
-                                            } catch (t: Throwable) {
-                                                // Optional: surface error to UI
-                                            } finally {
-                                                downloadingId = null
-                                                onDownloadingChanged(false)
-                                                expanded = false
-                                            }
-                                        }
+                                        onRequestDownload(opt)
                                     }
                                 }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
