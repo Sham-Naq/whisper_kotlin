@@ -1,140 +1,381 @@
 package com.example.whisper_kotlin.recorder
 
+import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.Icon
+import androidx.compose.material.Slider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.content.pm.PackageManager
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.example.whisper_kotlin.WhisperEngine
+import com.example.whisper_kotlin.ActionButton
+import com.example.whisper_kotlin.AudioSource
+import com.example.whisper_kotlin.ModelOption
+import com.example.whisper_kotlin.ModelSelectorRow
+import com.example.whisper_kotlin.TranscriptionViewModel
+import com.example.whisper_kotlin.FileSelectorRow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun RecorderScreen(
     modifier: Modifier = Modifier,
     isDark: Boolean,
     textColor: Color,
+    selectedModel: ModelOption?,
+    onSelectModel: (ModelOption) -> Unit,
+    isModelDownloading: Boolean,
+    onModelDownloadingChanged: (Boolean) -> Unit,
+    audioSource: AudioSource,
+    onAudioSourceChanged: (AudioSource) -> Unit,
+    transcriptionViewModel: TranscriptionViewModel,
     command: RecorderCommand? = null,
     onCommandHandled: () -> Unit = {},
     onRecordingStateChanged: (Boolean) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    // Recorder state must be defined before it's referenced in the permission callback
     val recorder = remember { AudioRecorder(scope = scope) }
     var isRecording by remember { mutableStateOf(false) }
-    var transcript by remember { mutableStateOf<String?>(null) }
-    // temp file lifecycle
+    var rawFile by remember { mutableStateOf<File?>(null) }
+    var wavFile by remember { mutableStateOf<File?>(null) }
+
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var playbackProgress by remember { mutableStateOf(0f) }
+    var playbackPositionMs by remember { mutableStateOf(0) }
+    var playbackDurationMs by remember { mutableStateOf(0) }
+
+    val transcriptionUi by transcriptionViewModel.uiState.collectAsState()
+    val bars by recorder.bars.collectAsState()
+
     val cacheDir = context.cacheDir
-    var rawFile by remember { mutableStateOf<java.io.File?>(null) }
-    var wavFile by remember { mutableStateOf<java.io.File?>(null) }
-    // Helper to start recording into a raw PCM file and reset transcript
+
+    fun releasePlayer() {
+        mediaPlayer?.release()
+        mediaPlayer = null
+        isPlaying = false
+        playbackProgress = 0f
+        playbackPositionMs = 0
+        playbackDurationMs = 0
+    }
+
     val startRecording: () -> Unit = {
-        val rf = java.io.File(cacheDir, "rec_${'$'}{System.currentTimeMillis()}.pcm")
+        releasePlayer()
+        wavFile?.let { file -> file.delete() }
+        val rf = File(cacheDir, "rec_${'$'}{System.currentTimeMillis()}.pcm")
         rawFile = rf
         recorder.start(rf)
-        transcript = null
         isRecording = true
+        onRecordingStateChanged(true)
     }
+
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            // Start recording immediately on grant
             startRecording()
         }
+        onCommandHandled()
     }
-    val bars by recorder.bars.collectAsState()
 
-    // React to external commands
+    DisposableEffect(wavFile) {
+        val file = wavFile
+        val player = if (file != null && file.exists()) {
+            try {
+                MediaPlayer().apply {
+                    setDataSource(file.absolutePath)
+                    prepare()
+                    setOnCompletionListener {
+                        isPlaying = false
+                        playbackProgress = 0f
+                        playbackPositionMs = 0
+                    }
+                }
+            } catch (_: Throwable) {
+                null
+            }
+        } else {
+            null
+        }
+
+        mediaPlayer = player
+        playbackDurationMs = player?.duration ?: 0
+        playbackProgress = 0f
+        playbackPositionMs = 0
+        isPlaying = false
+
+        onDispose {
+            player?.release()
+            if (mediaPlayer === player) {
+                mediaPlayer = null
+            }
+            isPlaying = false
+        }
+    }
+
+    LaunchedEffect(isPlaying, mediaPlayer) {
+        val player = mediaPlayer
+        if (isPlaying && player != null) {
+            while (isPlaying && player.isPlaying) {
+                playbackPositionMs = player.currentPosition
+                playbackDurationMs = player.duration
+                playbackProgress = if (player.duration > 0) {
+                    (player.currentPosition.toFloat() / player.duration.toFloat()).coerceIn(0f, 1f)
+                } else 0f
+                delay(200)
+            }
+        }
+    }
+
     LaunchedEffect(command) {
         when (command) {
-            is RecorderCommand.Start -> {
+            RecorderCommand.Start -> {
                 val hasPermission = ContextCompat.checkSelfPermission(
                     context,
                     android.Manifest.permission.RECORD_AUDIO
                 ) == PackageManager.PERMISSION_GRANTED
                 if (hasPermission) {
                     startRecording()
-                    onRecordingStateChanged(true)
                 } else {
                     requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    return@LaunchedEffect
                 }
                 onCommandHandled()
             }
-            is RecorderCommand.Pause -> {
+            RecorderCommand.Pause -> {
                 if (isRecording) {
                     recorder.pause()
-                    onRecordingStateChanged(true)
                 }
                 onCommandHandled()
             }
-            is RecorderCommand.Resume -> {
+            RecorderCommand.Resume -> {
                 if (isRecording) {
                     recorder.resume()
-                    onRecordingStateChanged(true)
                 }
                 onCommandHandled()
             }
-            is RecorderCommand.StopAndTranscribe -> {
+            RecorderCommand.Stop -> {
                 if (isRecording) {
-                    // mirror the stop click
                     scope.launch(Dispatchers.IO) {
-                        recorder.stop()
-                        val rf = rawFile
-                        if (rf != null && rf.exists() && rf.length() > 0) {
-                            val wf = java.io.File(cacheDir, rf.nameWithoutExtension + ".wav")
-                            try {
+                        try {
+                            recorder.stop()
+                            val rf = rawFile
+                            if (rf != null && rf.exists() && rf.length() > 0) {
+                                val wf = File(cacheDir, rf.nameWithoutExtension + ".wav")
                                 WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
-                                wavFile = wf
-                                val text = WhisperEngine.transcribeWavFile(wf.absolutePath)
-                                transcript = text
-                            } catch (t: Throwable) {
-                                transcript = "Transcription failed: ${'$'}t"
+                                withContext(Dispatchers.Main) {
+                                    wavFile = wf
+                                    onAudioSourceChanged(AudioSource.File(wf.absolutePath))
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    wavFile = null
+                                }
                             }
-                        } else {
-                            transcript = "No audio captured"
+                        } finally {
+                            withContext(Dispatchers.Main) {
+                                isRecording = false
+                                onRecordingStateChanged(false)
+                            }
                         }
                     }
-                    isRecording = false
-                    onRecordingStateChanged(false)
                 }
                 onCommandHandled()
             }
-            null -> {}
+            null -> Unit
         }
     }
 
+    fun formatTime(ms: Int): String {
+        val totalSeconds = ms / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return "%d:%02d".format(minutes, seconds)
+    }
+
+    val canPlayRecording = wavFile != null && mediaPlayer != null && playbackDurationMs > 0
+    val canTranscribe = !isRecording && !transcriptionUi.isTranscribing && (!isModelDownloading)
+
     Column(modifier = modifier.padding(16.dp)) {
-        // Waveform area
-        LineBarWaveform(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(160.dp)
-                .background(if (isDark) Color(0xFF181818) else Color(0xFFF0F0F0)),
-            bars = bars,
-            color = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5),
-            backgroundColor = null
+        ModelSelectorRow(
+            textColor = textColor,
+            isDark = isDark,
+            buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+            onSelected = onSelectModel,
+            onDownloadingChanged = onModelDownloadingChanged
         )
 
-        Spacer(Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // The actual Start/Stop control is driven by the nav mic overlay; spacer keeps layout similar
-        Spacer(Modifier.height(96.dp))
-        // Transcript output
-        transcript?.let { text ->
+        when {
+            isRecording -> {
+                LineBarWaveform(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .background(if (isDark) Color(0xFF181818) else Color(0xFFF0F0F0)),
+                    bars = bars,
+                    color = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5),
+                    backgroundColor = null
+                )
+            }
+            canPlayRecording -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, textColor.copy(alpha = 0.2f), CircleShape)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .background(Color(0xFF424242), CircleShape)
+                                .clickable(enabled = canPlayRecording) {
+                                    val player = mediaPlayer
+                                    if (player != null) {
+                                        if (isPlaying) {
+                                            player.pause()
+                                            isPlaying = false
+                                        } else {
+                                            player.start()
+                                            isPlaying = true
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause playback" else "Play recording",
+                                tint = Color.White
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Slider(
+                                value = playbackProgress,
+                                onValueChange = { value ->
+                                    playbackProgress = value
+                                    val player = mediaPlayer
+                                    if (player != null && playbackDurationMs > 0) {
+                                        val target = (value * playbackDurationMs).toInt().coerceIn(0, playbackDurationMs)
+                                        player.seekTo(target)
+                                        playbackPositionMs = target
+                                    }
+                                },
+                                valueRange = 0f..1f,
+                                enabled = canPlayRecording
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                androidx.compose.foundation.text.BasicText(
+                                    text = formatTime(playbackPositionMs),
+                                    style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                )
+                                androidx.compose.foundation.text.BasicText(
+                                    text = formatTime(playbackDurationMs),
+                                    style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            else -> {
+                FileSelectorRow(
+                    textColor = textColor,
+                    isDark = isDark,
+                    buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+                    source = audioSource,
+                    onSourceChanged = onAudioSourceChanged
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ActionButton(
+                label = if (wavFile != null) "Transcribe recording" else "Transcribe selection",
+                color = textColor,
+                enabled = canTranscribe
+            ) {
+                val source = if (wavFile != null) {
+                    AudioSource.File(wavFile!!.absolutePath)
+                } else {
+                    audioSource
+                }
+                transcriptionViewModel.startTranscription(
+                    context = context,
+                    selectedModel = selectedModel,
+                    audioSource = source,
+                    isModelDownloading = isModelDownloading
+                )
+            }
+
+            if (wavFile != null) {
+                ActionButton(
+                    label = "Delete recording",
+                    color = textColor
+                ) {
+                    isPlaying = false
+                    releasePlayer()
+                    wavFile?.delete()
+                    rawFile?.delete()
+                    wavFile = null
+                    rawFile = null
+                    onAudioSourceChanged(AudioSource.Asset("samples/samples_jfk.wav"))
+                }
+            }
+
+            ActionButton(
+                label = "Delete model",
+                color = textColor,
+                enabled = !transcriptionUi.isTranscribing
+            ) {
+                transcriptionViewModel.deleteModel(context, selectedModel)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        transcriptionUi.statusMessage?.let { message ->
             androidx.compose.foundation.text.BasicText(
-                text = text,
-                style = androidx.compose.ui.text.TextStyle(color = textColor)
+                text = message,
+                style = TextStyle(color = textColor.copy(alpha = 0.8f), fontWeight = FontWeight.Medium)
             )
         }
     }

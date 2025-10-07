@@ -2,7 +2,6 @@ package com.example.whisper_kotlin
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +21,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.LinearProgressIndicator
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // Project symbols used below
 // Not strictly required if in the same package, but safe to keep explicit
@@ -49,38 +58,13 @@ fun ActionButton(label: String, color: Color, enabled: Boolean = true, onClick: 
 fun TranscriptionScreen(
     modifier: Modifier = Modifier,
     textColor: Color = Color(0xFF0D47A1),
-    selectedModel: ModelOption? = null,
-    audioSource: AudioSource = AudioSource.Asset("samples/samples_jfk.wav"),
-    isModelDownloading: Boolean = false,
-    viewModel: TranscriptionViewModel = viewModel()
+    viewModel: TranscriptionViewModel = viewModel(),
+    onOpenTranscription: (Long) -> Unit = {}
 ) {
-    val ctx = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     Column(modifier = modifier) {
-        // Actions row (no explicit load button; model is loaded on selection or lazily here)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionButton(
-                label = "Transcribe",
-                color = textColor,
-                enabled = !uiState.isTranscribing && !isModelDownloading
-            ) {
-                viewModel.startTranscription(
-                    context = ctx,
-                    selectedModel = selectedModel,
-                    audioSource = audioSource,
-                    isModelDownloading = isModelDownloading
-                )
-            }
-            ActionButton(
-                label = "Delete model",
-                color = textColor,
-                enabled = !uiState.isTranscribing
-            ) {
-                viewModel.deleteModel(ctx, selectedModel)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
         val progress = uiState.progress
         val statusMessage = uiState.statusMessage
 
@@ -106,6 +90,88 @@ fun TranscriptionScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        BasicText(text = uiState.log, style = TextStyle(color = textColor))
+        val saved = uiState.savedTranscriptions
+        Spacer(modifier = Modifier.height(8.dp))
+        if (saved.isEmpty()) {
+            BasicText(
+                text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
+                style = TextStyle(color = textColor.copy(alpha = 0.8f))
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(saved, key = { it.id }) { entry ->
+                    val timestamp = remember(entry.timestamp) {
+                        SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(entry.timestamp))
+                    }
+                    val durationLabel = remember(entry.transcriptionDurationMs) {
+                        if (entry.transcriptionDurationMs >= 1000L) {
+                            String.format(Locale.getDefault(), "%.1f s", entry.transcriptionDurationMs / 1000f)
+                        } else {
+                            "${entry.transcriptionDurationMs} ms"
+                        }
+                    }
+                    val summary = remember(entry.transcript) {
+                        entry.transcript
+                            .lineSequence()
+                            .firstOrNull()
+                            ?.take(160)
+                            ?.let { if (entry.transcript.length > 160) "$it…" else it }
+                            ?: "Tap to view transcript"
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, textColor.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                            .clickable { onOpenTranscription(entry.id) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f, fill = true)) {
+                                BasicText(
+                                    text = entry.fileLabel,
+                                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                BasicText(
+                                    text = "Model: ${entry.modelLabel}",
+                                    style = TextStyle(color = textColor.copy(alpha = 0.7f))
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                BasicText(
+                                    text = "Saved: $timestamp",
+                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                BasicText(
+                                    text = "Transcription time: $durationLabel",
+                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                                )
+                            }
+                            IconButton(
+                                onClick = { viewModel.deleteTranscription(context, entry.id) }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Delete transcription",
+                                    tint = textColor.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        BasicText(
+                            text = summary,
+                            style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                        )
+                    }
+                }
+            }
+        }
     }
 }

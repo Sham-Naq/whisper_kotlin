@@ -36,7 +36,7 @@ class AudioRecorder(
     val bars: StateFlow<FloatArray> = _bars
 
     private var ema: FloatArray = FloatArray(barCount) { 0f }
-    private val alpha = 0.22f // smoothing factor
+    private val alpha = 0.38f // smoothing factor (higher = more responsive)
 
     fun start(outputRawFile: java.io.File? = null) {
         if (job != null) return
@@ -53,7 +53,7 @@ class AudioRecorder(
 
         job = scope.launch(Dispatchers.Default) {
             val buf = ShortArray(minBuffer / 2)
-            val window = max(256, sampleRate / barCount) // samples per bar window
+            val window = max(192, sampleRate / (barCount * 3 / 2)) // smaller window for more detail
             var accAbs = 0L
             var count = 0
             val values = FloatArray(barCount)

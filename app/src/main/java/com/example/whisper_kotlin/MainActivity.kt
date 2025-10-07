@@ -47,9 +47,11 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.navArgument
 import androidx.navigation.compose.rememberNavController
 
 import android.content.res.Configuration
@@ -58,6 +60,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.whisper_kotlin.TranscriptionViewModel
+import com.example.whisper_kotlin.data.TranscriptionRepository
 // Material icons for bottom navigation
 import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
@@ -71,6 +74,7 @@ import androidx.compose.material.icons.filled.Stop
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TranscriptionRepository.initialize(applicationContext)
         setContent { HomeScreen() }
     }
 }
@@ -81,22 +85,29 @@ private enum class BottomTab(val route: String, val header: String) {
     Settings(route = "settings", header = "Settings")
 }
 
+private const val TRANSCRIPTION_DETAIL_ROUTE = "transcriptionDetail/{entryId}"
+
+private fun transcriptionDetailRoute(entryId: Long) = "transcriptionDetail/$entryId"
+
 @Composable
 private fun HomeScreen() {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: BottomTab.Transcription.route
+    val effectiveRoute = when (currentRoute) {
+        TRANSCRIPTION_DETAIL_ROUTE -> BottomTab.Transcription.route
+        else -> currentRoute
+    }
     val currentHeader = when (currentRoute) {
         BottomTab.Recorder.route -> BottomTab.Recorder.header
         BottomTab.Settings.route -> BottomTab.Settings.header
+        TRANSCRIPTION_DETAIL_ROUTE -> "Transcript"
         else -> BottomTab.Transcription.header
     }
 
-    // Simple theme palette (foundation-only): dark-mode friendly with dark blue accents
     val isDark = isSystemInDarkTheme()
     val background = if (isDark) Color(0xFF121212) else Color(0xFFF7F7F7)
     val headerBg = if (isDark) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
-    // Use dark blue instead of black; brighten in dark mode for contrast
     val primaryTextColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF0D47A1)
     val bottomBarBg = if (isDark) Color(0xFF1A1A1A) else Color.White
     val bottomBarDivider = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE6E6E6)
@@ -107,44 +118,33 @@ private fun HomeScreen() {
     val activeIconColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5)
     val inactiveIconColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF888888)
 
-    // Recorder command plumbing between nav bar mic and RecorderScreen
     var recorderCommand by remember { mutableStateOf<com.example.whisper_kotlin.recorder.RecorderCommand?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     var isRecorderPaused by remember { mutableStateOf(false) }
 
     val transcriptionViewModel: TranscriptionViewModel = viewModel()
 
+    var selectedModel by remember { mutableStateOf<ModelOption?>(null) }
+    var audioSource by remember { mutableStateOf<AudioSource>(AudioSource.Asset("samples/samples_jfk.wav")) }
+    var isModelDownloading by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.fillMaxSize().background(background)) {
-        // Top header
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(headerBg)
                 .padding(vertical = 16.dp, horizontal = 20.dp)
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Centered page header below the selector
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    BasicText(
-                        text = currentHeader,
-                        style = TextStyle(
-                            color = primaryTextColor,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    )
-                }
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                BasicText(
+                    text = currentHeader,
+                    style = TextStyle(color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                )
             }
         }
-
-        // Content area
-        // Track selected model from the selector so Transcription screen can use it
-    var selectedModel by remember { mutableStateOf<ModelOption?>(null) }
-        // Track selected audio file/asset for transcription
-        var audioSource by remember { mutableStateOf<AudioSource>(AudioSource.Asset("samples/samples_jfk.wav")) }
-        var isModelDownloading by remember { mutableStateOf(false) }
 
         Column(
             modifier = Modifier
@@ -152,40 +152,19 @@ private fun HomeScreen() {
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Show model selector under the header on Transcription and Recorder pages
-            if (currentRoute == BottomTab.Transcription.route || currentRoute == BottomTab.Recorder.route) {
-                ModelSelectorRow(
-                    textColor = primaryTextColor,
-                    isDark = isDark,
-                    buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
-                    onSelected = { opt -> selectedModel = opt },
-                    onDownloadingChanged = { downloading -> isModelDownloading = downloading }
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                if (currentRoute == BottomTab.Transcription.route) {
-                    FileSelectorRow(
-                        textColor = primaryTextColor,
-                        isDark = isDark,
-                        buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
-                        source = audioSource,
-                        onSourceChanged = { audioSource = it }
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
             NavHost(
                 navController = navController,
                 startDestination = BottomTab.Transcription.route,
-                modifier = Modifier.fillMaxWidth().weight(1f)
+                modifier = Modifier.fillMaxSize()
             ) {
                 composable(BottomTab.Transcription.route) {
                     TranscriptionScreen(
                         modifier = Modifier.fillMaxSize(),
                         textColor = primaryTextColor,
-                        selectedModel = selectedModel,
-                        audioSource = audioSource,
-                        isModelDownloading = isModelDownloading,
-                        viewModel = transcriptionViewModel
+                        viewModel = transcriptionViewModel,
+                        onOpenTranscription = { id ->
+                            navController.navigate(transcriptionDetailRoute(id))
+                        }
                     )
                 }
                 composable(BottomTab.Recorder.route) {
@@ -193,34 +172,78 @@ private fun HomeScreen() {
                         modifier = Modifier.fillMaxSize(),
                         isDark = isDark,
                         textColor = primaryTextColor,
+                        selectedModel = selectedModel,
+                        onSelectModel = { selectedModel = it },
+                        isModelDownloading = isModelDownloading,
+                        onModelDownloadingChanged = { downloading -> isModelDownloading = downloading },
+                        audioSource = audioSource,
+                        onAudioSourceChanged = { audioSource = it },
+                        transcriptionViewModel = transcriptionViewModel,
                         command = recorderCommand,
                         onCommandHandled = { recorderCommand = null },
-                        onRecordingStateChanged = {
-                            isRecording = it
-                            if (!it) {
+                        onRecordingStateChanged = { recording ->
+                            isRecording = recording
+                            if (!recording) {
                                 isRecorderPaused = false
                             }
                         }
                     )
                 }
-                composable(BottomTab.Settings.route) { SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor) }
+                composable(BottomTab.Settings.route) {
+                    SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor)
+                }
+                composable(
+                    route = TRANSCRIPTION_DETAIL_ROUTE,
+                    arguments = listOf(navArgument("entryId") { type = NavType.LongType })
+                ) { entry ->
+                    val entryId = entry.arguments?.getLong("entryId")
+                    val detailContext = LocalContext.current
+                    val saved = entryId?.let { transcriptionViewModel.getTranscription(it) }
+                    if (saved != null) {
+                        TranscriptionDetailScreen(
+                            entry = saved,
+                            textColor = primaryTextColor,
+                            modifier = Modifier.fillMaxSize(),
+                            onBack = { navController.popBackStack() },
+                            onDelete = {
+                                transcriptionViewModel.deleteTranscription(detailContext, saved.id)
+                                navController.popBackStack(route = BottomTab.Transcription.route, inclusive = false)
+                            }
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            BasicText(
+                                text = "Transcription not found.",
+                                style = TextStyle(color = primaryTextColor)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            ActionButton(label = "Back", color = primaryTextColor) {
+                                navController.popBackStack()
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // Bottom nav bar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(bottomBarBg)
         ) {
-            // Top divider line separating content from nav bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
                     .background(bottomBarDivider)
             )
-            val route = currentRoute
+
+            val route = effectiveRoute
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -228,7 +251,6 @@ private fun HomeScreen() {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left item wrapper (Transcriptions)
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
@@ -262,7 +284,6 @@ private fun HomeScreen() {
                     }
                 }
 
-                // Middle item wrapper (Recorder) - always circular mic; glides up when Recorder is selected
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
@@ -297,10 +318,9 @@ private fun HomeScreen() {
                                     }
                                     isRecorderPaused = false
                                 } else {
-                                    // if already on Recorder, toggle start/stop
                                     if (isRecording) {
                                         isRecorderPaused = false
-                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe
+                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Stop
                                     } else {
                                         isRecorderPaused = false
                                         recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Start
@@ -317,17 +337,14 @@ private fun HomeScreen() {
                         )
                     }
 
-                    // When recording, show Pause and Stop floating controls above the mic
                     if (isRecorder && isRecording) {
                         val pauseIcon = if (isRecorderPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause
                         val pauseDescription = if (isRecorderPaused) "Resume" else "Pause"
                         Row(
-                            modifier = Modifier
-                                .offset(y = (-210).dp),
+                            modifier = Modifier.offset(y = (-210).dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Pause button
                             Box(
                                 modifier = Modifier
                                     .size(52.dp)
@@ -349,14 +366,13 @@ private fun HomeScreen() {
                                     tint = Color.White
                                 )
                             }
-                            // Stop button
                             Box(
                                 modifier = Modifier
                                     .size(52.dp)
                                     .background(Color(0xFFE53935), CircleShape)
                                     .clickable {
                                         isRecorderPaused = false
-                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.StopAndTranscribe
+                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Stop
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -370,7 +386,6 @@ private fun HomeScreen() {
                     }
                 }
 
-                // Right item wrapper (Settings)
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
