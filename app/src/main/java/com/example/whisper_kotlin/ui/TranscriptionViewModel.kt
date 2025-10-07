@@ -107,7 +107,8 @@ class TranscriptionViewModel(
         context: Context,
         selectedModel: ModelOption?,
         audioSource: AudioSource,
-        isModelDownloading: Boolean
+        isModelDownloading: Boolean,
+        transcriptionName: String? = null
     ) {
         val appContext = context.applicationContext
         if (isModelDownloading) {
@@ -156,7 +157,8 @@ class TranscriptionViewModel(
 
                 val elapsedMs = SystemClock.elapsedRealtime() - startMs
                 val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", elapsedMs / 1000.0) + " s (" + elapsedMs + " ms)"
-                val fileLabel = when (audioSource) {
+                val providedLabel = transcriptionName?.trim()?.takeIf { it.isNotEmpty() }
+                val fileLabel = providedLabel ?: when (audioSource) {
                     is AudioSource.Asset -> audioSource.assetPath.substringAfterLast('/')
                     is AudioSource.File -> java.io.File(audioSource.path).name
                 }

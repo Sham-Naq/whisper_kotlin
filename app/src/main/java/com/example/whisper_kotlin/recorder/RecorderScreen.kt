@@ -18,12 +18,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
+import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Slider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,6 +47,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun RecorderScreen(
@@ -225,6 +231,15 @@ fun RecorderScreen(
     val canPlayRecording = wavFile != null && mediaPlayer != null && playbackDurationMs > 0
     val canTranscribe = !isRecording && !transcriptionUi.isTranscribing && (!isModelDownloading)
 
+    fun generateDefaultTranscriptionName(): String {
+        val pattern = SimpleDateFormat("yyyy-MM-dd HH.mm.ss", Locale.getDefault())
+        return pattern.format(Date())
+    }
+
+    var transcriptionName by rememberSaveable { mutableStateOf(generateDefaultTranscriptionName()) }
+
+    val selectorButtonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6)
+
     val modelDownloadVm: ModelDownloadViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val modelDownloadState by modelDownloadVm.uiState.collectAsState()
 
@@ -236,10 +251,40 @@ fun RecorderScreen(
     }
 
     Column(modifier = modifier.padding(16.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(selectorButtonBg, RoundedCornerShape(8.dp))
+                    .clickable {
+                        transcriptionName = generateDefaultTranscriptionName()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.foundation.text.BasicText(
+                    text = "Name",
+                    style = TextStyle(color = textColor, fontWeight = FontWeight.Medium)
+                )
+            }
+            OutlinedTextField(
+                value = transcriptionName,
+                onValueChange = { transcriptionName = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                textStyle = TextStyle(color = textColor)
+            )
+        }
+
         ModelSelectorRow(
             textColor = textColor,
             isDark = isDark,
-            buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+            buttonBg = selectorButtonBg,
             selectedModel = modelDownloadState.selectedModel ?: selectedModel,
             downloadingId = modelDownloadState.downloadingId,
             progressPct = modelDownloadState.progressPct,
@@ -366,7 +411,8 @@ fun RecorderScreen(
                     context = context,
                     selectedModel = selectedModel,
                     audioSource = source,
-                    isModelDownloading = isModelDownloading
+                    isModelDownloading = isModelDownloading,
+                    transcriptionName = transcriptionName
                 )
             }
 
