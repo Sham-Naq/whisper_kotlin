@@ -207,6 +207,7 @@ private fun HomeScreen() {
                             entry = saved,
                             textColor = primaryTextColor,
                             modifier = Modifier.fillMaxSize(),
+                            viewModel = transcriptionViewModel,
                             onBack = { navController.popBackStack() },
                             onDelete = {
                                 transcriptionViewModel.deleteTranscription(detailContext, saved.id)
@@ -246,6 +247,7 @@ private fun HomeScreen() {
             )
 
             val route = effectiveRoute
+            val isOnTranscriptionDetail = currentRoute == TRANSCRIPTION_DETAIL_ROUTE
 
             Row(
                 modifier = Modifier
@@ -263,11 +265,16 @@ private fun HomeScreen() {
                     BottomNavItem(
                         selected = isSelected,
                         onClick = {
-                            if (!isSelected) {
-                                navController.navigate(BottomTab.Transcription.route) {
-                                    launchSingleTop = true
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    restoreState = true
+                            when {
+                                isOnTranscriptionDetail -> {
+                                    navController.popBackStack(route = BottomTab.Transcription.route, inclusive = false)
+                                }
+                                !isSelected -> {
+                                    navController.navigate(BottomTab.Transcription.route) {
+                                        launchSingleTop = true
+                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        restoreState = true
+                                    }
                                 }
                             }
                         },

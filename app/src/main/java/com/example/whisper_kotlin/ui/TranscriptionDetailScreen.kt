@@ -1,33 +1,63 @@
 package com.example.whisper_kotlin
 
 import android.media.MediaPlayer
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Slider
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.whisper_kotlin.ModelDownloadViewModel
+import com.example.whisper_kotlin.ModelManager
+import com.example.whisper_kotlin.ModelOption
+import com.example.whisper_kotlin.ModelSelectorRow
 import kotlinx.coroutines.delay
 import java.io.File
 import java.text.SimpleDateFormat
@@ -39,17 +69,48 @@ fun TranscriptionDetailScreen(
     entry: SavedTranscription,
     textColor: Color,
     modifier: Modifier = Modifier,
+    viewModel: TranscriptionViewModel,
     onBack: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val currentEntry = uiState.savedTranscriptions.firstOrNull { it.id == entry.id } ?: entry
+    val isDark = isSystemInDarkTheme()
+    val selectorButtonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6)
+    val modelDownloadViewModel: ModelDownloadViewModel = viewModel()
+    val modelDownloadState by modelDownloadViewModel.uiState.collectAsState()
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showReTranscribeDialog by remember { mutableStateOf(false) }
+    var reTranscribeSelectedModel by remember { mutableStateOf<ModelOption?>(null) }
+    val entryModelOption = remember(currentEntry.modelLabel) {
+        val label = currentEntry.modelLabel
+        val direct = ModelManager.findModel(label)
+        val compact = if (direct == null) ModelManager.findModel(label.substringBefore(' ')) else null
+        (direct ?: compact)?.let { spec -> ModelOption(spec.id, spec.fileName, spec.url) }
+    }
+
+    LaunchedEffect(currentEntry.id) {
+        reTranscribeSelectedModel = entryModelOption
+        showDeleteDialog = false
+        showReTranscribeDialog = false
+    }
+
+    LaunchedEffect(modelDownloadState.selectedModel) {
+        modelDownloadState.selectedModel?.let { selected ->
+            reTranscribeSelectedModel = selected
+        }
+    }
+
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var playbackProgress by remember { mutableStateOf(0f) }
     var playbackPositionMs by remember { mutableStateOf(0) }
     var playbackDurationMs by remember { mutableStateOf(0) }
 
-    val audioFile = remember(entry.audioPath) {
-        entry.audioPath?.let { File(it) }?.takeIf { it.exists() }
+    val audioFile = remember(currentEntry.audioPath) {
+        currentEntry.audioPath?.let { File(it) }?.takeIf { it.exists() }
     }
 
     DisposableEffect(audioFile) {
@@ -104,14 +165,14 @@ fun TranscriptionDetailScreen(
         return "%d:%02d".format(minutes, seconds)
     }
 
-    val timestamp = remember(entry.timestamp) {
-        SimpleDateFormat("MMM d, yyyy • HH:mm", Locale.getDefault()).format(Date(entry.timestamp))
+    val timestamp = remember(currentEntry.timestamp) {
+        SimpleDateFormat("MMM d, yyyy • HH:mm", Locale.getDefault()).format(Date(currentEntry.timestamp))
     }
-    val durationLabel = remember(entry.transcriptionDurationMs) {
-        if (entry.transcriptionDurationMs >= 1000L) {
-            String.format(Locale.getDefault(), "%.1f s", entry.transcriptionDurationMs / 1000f)
+    val durationLabel = remember(currentEntry.transcriptionDurationMs) {
+        if (currentEntry.transcriptionDurationMs >= 1000L) {
+            String.format(Locale.getDefault(), "%.1f s", currentEntry.transcriptionDurationMs / 1000f)
         } else {
-            "${entry.transcriptionDurationMs} ms"
+            "${currentEntry.transcriptionDurationMs} ms"
         }
     }
 
@@ -121,22 +182,68 @@ fun TranscriptionDetailScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ActionButton(label = "Back", color = textColor) {
-                onBack()
-            }
-            ActionButton(label = "Delete", color = textColor) {
-                onDelete()
-            }
+            DetailActionIcon(
+                icon = Icons.Filled.ArrowBack,
+                tint = textColor,
+                background = textColor,
+                contentDescription = "Back",
+                onClick = onBack
+            )
+            DetailActionIcon(
+                icon = Icons.Filled.Delete,
+                tint = Color(0xFFE57373),
+                background = Color(0xFFE57373),
+                contentDescription = "Delete transcription",
+                onClick = { showDeleteDialog = true }
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        BasicText(
-            text = entry.fileLabel,
-            style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BasicText(
+                text = currentEntry.fileLabel,
+                style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.weight(1f, fill = true)
+            )
+            DetailActionIcon(
+                icon = Icons.Filled.Refresh,
+                tint = Color(0xFFFFA726),
+                background = Color(0xFFFFA726),
+                contentDescription = "Re-transcribe",
+                enabled = !uiState.isTranscribing && currentEntry.audioPath != null,
+                onClick = {
+                    if (reTranscribeSelectedModel == null) {
+                        reTranscribeSelectedModel = modelDownloadState.selectedModel ?: entryModelOption
+                    }
+                    showReTranscribeDialog = true
+                }
+            )
+            DetailActionIcon(
+                icon = Icons.Filled.AccessTime,
+                tint = Color(0xFFBA68C8),
+                background = Color(0xFFBA68C8),
+                contentDescription = "Show with timestamps",
+                enabled = !uiState.isTranscribing && (currentEntry.timestampedTranscript != null || currentEntry.audioPath != null),
+                onClick = { viewModel.generateTimestampPreview(context, currentEntry.id) }
+            )
+            DetailActionIcon(
+                icon = Icons.Filled.ContentCopy,
+                tint = Color(0xFF64B5F6),
+                background = Color(0xFF64B5F6),
+                contentDescription = "Copy transcript",
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(currentEntry.transcript))
+                    Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
         Spacer(modifier = Modifier.height(4.dp))
         BasicText(
-            text = "Model: ${entry.modelLabel}",
+            text = "Model: ${currentEntry.modelLabel}",
             style = TextStyle(color = textColor.copy(alpha = 0.75f))
         )
         Spacer(modifier = Modifier.height(4.dp))
@@ -146,7 +253,7 @@ fun TranscriptionDetailScreen(
         )
         Spacer(modifier = Modifier.height(4.dp))
         BasicText(
-            text = "Transcription time: $durationLabel (${entry.transcriptionDurationMs} ms)",
+            text = "Transcription time: $durationLabel (${currentEntry.transcriptionDurationMs} ms)",
             style = TextStyle(color = textColor.copy(alpha = 0.65f))
         )
 
@@ -217,8 +324,141 @@ fun TranscriptionDetailScreen(
         )
         Spacer(modifier = Modifier.height(8.dp))
         BasicText(
-            text = entry.transcript,
+            text = currentEntry.transcript,
             style = TextStyle(color = textColor.copy(alpha = 0.85f))
         )
+    }
+
+    val previewText = uiState.timestampPreview
+    if (previewText != null) {
+        val previewTitle = uiState.timestampPreviewTitle ?: "Transcript (timestamps)"
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissTimestampPreview() },
+            title = { Text(previewTitle, color = textColor, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(previewText, color = textColor.copy(alpha = 0.85f))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissTimestampPreview() }) {
+                    Text("Close")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    clipboardManager.setText(AnnotatedString(previewText))
+                    Toast.makeText(context, "Copied with timestamps", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("Copy")
+                }
+            }
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete transcription?", color = textColor, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text(
+                    "This will remove ${currentEntry.fileLabel}. The audio and transcript will be deleted.",
+                    color = textColor.copy(alpha = 0.85f)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDelete()
+                }) {
+                    Text("Delete", color = Color(0xFFE57373))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showReTranscribeDialog) {
+        AlertDialog(
+            onDismissRequest = { showReTranscribeDialog = false },
+            title = { Text("Re-transcribe recording", color = textColor, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Select a model and confirm to re-run Whisper on this audio.",
+                        color = textColor.copy(alpha = 0.85f)
+                    )
+                    ModelSelectorRow(
+                        textColor = textColor,
+                        isDark = isDark,
+                        buttonBg = selectorButtonBg,
+                        selectedModel = reTranscribeSelectedModel ?: modelDownloadState.selectedModel,
+                        downloadingId = modelDownloadState.downloadingId,
+                        progressPct = modelDownloadState.progressPct,
+                        onSelectModel = { opt ->
+                            reTranscribeSelectedModel = opt
+                            modelDownloadViewModel.selectIfPresent(context, opt)
+                        },
+                        onRequestDownload = { opt ->
+                            modelDownloadViewModel.startDownloadOrSelect(context, opt)
+                        },
+                        onCancelDownload = { modelDownloadViewModel.cancelDownload() }
+                    )
+                    modelDownloadState.message?.let { msg ->
+                        Text(msg, color = textColor.copy(alpha = 0.75f))
+                    }
+                }
+            },
+            confirmButton = {
+                val isDownloading = modelDownloadState.downloadingId != null
+                TextButton(
+                    enabled = !isDownloading && !uiState.isTranscribing,
+                    onClick = {
+                        val chosen = reTranscribeSelectedModel ?: modelDownloadState.selectedModel
+                        showReTranscribeDialog = false
+                        viewModel.reTranscribeEntry(context, currentEntry.id, selectedModel = chosen)
+                        Toast.makeText(context, "Re-transcribing…", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(if (modelDownloadState.downloadingId != null) "Downloading…" else "Re-transcribe")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReTranscribeDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun DetailActionIcon(
+    icon: ImageVector,
+    tint: Color,
+    background: Color,
+    contentDescription: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(background.copy(alpha = 0.18f))
+            .alpha(if (enabled) 1f else 0.35f)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(imageVector = icon, contentDescription = contentDescription, tint = tint)
     }
 }
