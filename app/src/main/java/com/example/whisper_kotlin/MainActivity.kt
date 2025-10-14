@@ -11,11 +11,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -47,12 +52,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.navArgument
-import androidx.navigation.compose.rememberNavController
+import androidx.activity.compose.BackHandler
 
 import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +60,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.whisper_kotlin.TranscriptionViewModel
-import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.data.TranscriptionRepository
 // Material icons for bottom navigation
 import androidx.compose.material.Icon
@@ -86,25 +85,17 @@ private enum class BottomTab(val route: String, val header: String) {
     Settings(route = "settings", header = "Settings")
 }
 
-private const val TRANSCRIPTION_DETAIL_ROUTE = "transcriptionDetail/{entryId}"
+private val bottomTabOrder: List<BottomTab> = listOf(
+    BottomTab.Transcription,
+    BottomTab.Recorder,
+    BottomTab.Settings
+)
 
-private fun transcriptionDetailRoute(entryId: Long) = "transcriptionDetail/$entryId"
-
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 private fun HomeScreen() {
-    val navController = rememberNavController()
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route ?: BottomTab.Transcription.route
-    val effectiveRoute = when (currentRoute) {
-        TRANSCRIPTION_DETAIL_ROUTE -> BottomTab.Transcription.route
-        else -> currentRoute
-    }
-    val currentHeader = when (currentRoute) {
-        BottomTab.Recorder.route -> BottomTab.Recorder.header
-        BottomTab.Settings.route -> BottomTab.Settings.header
-        TRANSCRIPTION_DETAIL_ROUTE -> "Transcript"
-        else -> BottomTab.Transcription.header
-    }
+    var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
+    var detailEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     val isDark = isSystemInDarkTheme()
     val background = if (isDark) Color(0xFF121212) else Color(0xFFF7F7F7)
@@ -114,8 +105,6 @@ private fun HomeScreen() {
     val bottomBarDivider = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE6E6E6)
     val navSelectedBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
     val navUnselectedBg = if (isDark) Color(0xFF222222) else Color(0xFFF5F5F5)
-    val navSelectedBorder = if (isDark) Color(0xFF3A3A3A) else Color(0xFF9E9E9E)
-    val navUnselectedBorder = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE0E0E0)
     val activeIconColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5)
     val inactiveIconColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF888888)
 
@@ -129,7 +118,26 @@ private fun HomeScreen() {
     var audioSource by remember { mutableStateOf<AudioSource>(AudioSource.Asset("samples/samples_jfk.wav")) }
     var isModelDownloading by remember { mutableStateOf(false) }
 
-    val modelDownloadViewModel: ModelDownloadViewModel = viewModel()
+
+    val detailEntry = detailEntryId?.let { transcriptionViewModel.getTranscription(it) }
+    val currentHeader = if (detailEntry != null) "Transcript" else activeTab.header
+
+    BackHandler(enabled = detailEntry != null) {
+        detailEntryId = null
+    }
+
+    val shouldReturnToTranscriptions = detailEntry == null && activeTab != BottomTab.Transcription
+    if (shouldReturnToTranscriptions) {
+        BackHandler {
+            activeTab = BottomTab.Transcription
+        }
+    }
+
+    LaunchedEffect(detailEntryId, detailEntry) {
+        if (detailEntryId != null && detailEntry == null) {
+            detailEntryId = null
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(background)) {
         Box(
@@ -144,7 +152,7 @@ private fun HomeScreen() {
             ) {
                 BasicText(
                     text = currentHeader,
-                    style = TextStyle(color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                    style = TextStyle(color = primaryTextColor, fontWeight = FontWeight.Bold)
                 )
             }
         }
@@ -155,78 +163,104 @@ private fun HomeScreen() {
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            NavHost(
-                navController = navController,
-                startDestination = BottomTab.Transcription.route,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                composable(BottomTab.Transcription.route) {
-                    TranscriptionScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        textColor = primaryTextColor,
-                        viewModel = transcriptionViewModel,
-                        onOpenTranscription = { id ->
-                            navController.navigate(transcriptionDetailRoute(id))
+            Box(modifier = Modifier.fillMaxSize()) {
+                AnimatedContent(
+                    targetState = activeTab,
+                    transitionSpec = {
+                        val initialIndex = bottomTabOrder.indexOf(initialState).takeIf { it >= 0 } ?: 0
+                        val targetIndex = bottomTabOrder.indexOf(targetState).takeIf { it >= 0 } ?: 0
+                        val forward = targetIndex > initialIndex
+                        val enter = slideInHorizontally(animationSpec = tween(320)) { fullWidth ->
+                            if (forward) fullWidth else -fullWidth
                         }
-                    )
-                }
-                composable(BottomTab.Recorder.route) {
-                    com.example.whisper_kotlin.recorder.RecorderScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        isDark = isDark,
-                        textColor = primaryTextColor,
-                        selectedModel = selectedModel,
-                        onSelectModel = { selectedModel = it },
-                        isModelDownloading = isModelDownloading,
-                        onModelDownloadingChanged = { downloading -> isModelDownloading = downloading },
-                        audioSource = audioSource,
-                        onAudioSourceChanged = { audioSource = it },
-                        transcriptionViewModel = transcriptionViewModel,
-                        command = recorderCommand,
-                        onCommandHandled = { recorderCommand = null },
-                        onRecordingStateChanged = { recording ->
-                            isRecording = recording
-                            if (!recording) {
-                                isRecorderPaused = false
-                            }
+                        val exit = slideOutHorizontally(animationSpec = tween(320)) { fullWidth ->
+                            if (forward) -fullWidth else fullWidth
                         }
-                    )
+                        enter togetherWith exit
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "tabAnimation"
+                ) { tab ->
+                    when (tab) {
+                        BottomTab.Transcription -> {
+                            TranscriptionScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                textColor = primaryTextColor,
+                                viewModel = transcriptionViewModel,
+                                onOpenTranscription = { id ->
+                                    activeTab = BottomTab.Transcription
+                                    detailEntryId = id
+                                }
+                            )
+                        }
+                        BottomTab.Recorder -> {
+                            com.example.whisper_kotlin.recorder.RecorderScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                isDark = isDark,
+                                textColor = primaryTextColor,
+                                selectedModel = selectedModel,
+                                onSelectModel = { selectedModel = it },
+                                isModelDownloading = isModelDownloading,
+                                onModelDownloadingChanged = { downloading -> isModelDownloading = downloading },
+                                audioSource = audioSource,
+                                onAudioSourceChanged = { audioSource = it },
+                                transcriptionViewModel = transcriptionViewModel,
+                                command = recorderCommand,
+                                onCommandHandled = { recorderCommand = null },
+                                onRecordingStateChanged = { recording ->
+                                    isRecording = recording
+                                    if (!recording) {
+                                        isRecorderPaused = false
+                                    }
+                                }
+                            )
+                        }
+                        BottomTab.Settings -> {
+                            SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor)
+                        }
+                    }
                 }
-                composable(BottomTab.Settings.route) {
-                    SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor)
-                }
-                composable(
-                    route = TRANSCRIPTION_DETAIL_ROUTE,
-                    arguments = listOf(navArgument("entryId") { type = NavType.LongType })
-                ) { entry ->
-                    val entryId = entry.arguments?.getLong("entryId")
-                    val detailContext = LocalContext.current
-                    val saved = entryId?.let { transcriptionViewModel.getTranscription(it) }
-                    if (saved != null) {
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = detailEntry != null,
+                    modifier = Modifier.matchParentSize(),
+                    enter = slideInHorizontally(animationSpec = tween(300)) { it },
+                    exit = slideOutHorizontally(animationSpec = tween(300)) { it }
+                ) {
+                    val context = LocalContext.current
+                    val entry = detailEntry
+                    if (entry != null) {
                         TranscriptionDetailScreen(
-                            entry = saved,
+                            entry = entry,
                             textColor = primaryTextColor,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(background),
                             viewModel = transcriptionViewModel,
-                            onBack = { navController.popBackStack() },
+                            onBack = { detailEntryId = null },
                             onDelete = {
-                                transcriptionViewModel.deleteTranscription(detailContext, saved.id)
-                                navController.popBackStack(route = BottomTab.Transcription.route, inclusive = false)
+                                transcriptionViewModel.deleteTranscription(context, entry.id)
+                                detailEntryId = null
                             }
                         )
                     } else {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(background),
+                            contentAlignment = Alignment.Center
                         ) {
-                            BasicText(
-                                text = "Transcription not found.",
-                                style = TextStyle(color = primaryTextColor)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            ActionButton(label = "Back", color = primaryTextColor) {
-                                navController.popBackStack()
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                BasicText(
+                                    text = "Transcription not found.",
+                                    style = TextStyle(color = primaryTextColor)
+                                )
+                                ActionButton(label = "Back", color = primaryTextColor) {
+                                    detailEntryId = null
+                                }
                             }
                         }
                     }
@@ -246,8 +280,8 @@ private fun HomeScreen() {
                     .background(bottomBarDivider)
             )
 
-            val route = effectiveRoute
-            val isOnTranscriptionDetail = currentRoute == TRANSCRIPTION_DETAIL_ROUTE
+            val highlightedTab = if (detailEntry != null) BottomTab.Transcription else activeTab
+            val isViewingDetail = detailEntry != null
 
             Row(
                 modifier = Modifier
@@ -260,23 +294,13 @@ private fun HomeScreen() {
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    val isSelected = route == BottomTab.Transcription.route
+                    val isSelected = highlightedTab == BottomTab.Transcription
                     val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleT")
                     BottomNavItem(
                         selected = isSelected,
                         onClick = {
-                            when {
-                                isOnTranscriptionDetail -> {
-                                    navController.popBackStack(route = BottomTab.Transcription.route, inclusive = false)
-                                }
-                                !isSelected -> {
-                                    navController.navigate(BottomTab.Transcription.route) {
-                                        launchSingleTop = true
-                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                        restoreState = true
-                                    }
-                                }
-                            }
+                            detailEntryId = null
+                            activeTab = BottomTab.Transcription
                         },
                         modifier = Modifier,
                         selectedBgColor = navSelectedBg,
@@ -298,7 +322,7 @@ private fun HomeScreen() {
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    val isRecorder = route == BottomTab.Recorder.route
+                    val isRecorder = activeTab == BottomTab.Recorder
                     val offsetY by animateDpAsState(
                         targetValue = if (isRecorder) (-24).dp else 0.dp,
                         animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
@@ -321,11 +345,8 @@ private fun HomeScreen() {
                             .background(circleColor, CircleShape)
                             .clickable {
                                 if (!isRecorder) {
-                                    navController.navigate(BottomTab.Recorder.route) {
-                                        launchSingleTop = true
-                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                        restoreState = true
-                                    }
+                                    detailEntryId = null
+                                    activeTab = BottomTab.Recorder
                                     isRecorderPaused = false
                                 } else {
                                     if (isRecording) {
@@ -400,17 +421,14 @@ private fun HomeScreen() {
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    val isSelected = route == BottomTab.Settings.route
+                    val isSelected = highlightedTab == BottomTab.Settings
                     val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleS")
                     BottomNavItem(
                         selected = isSelected,
                         onClick = {
-                            if (!isSelected) {
-                                navController.navigate(BottomTab.Settings.route) {
-                                    launchSingleTop = true
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    restoreState = true
-                                }
+                            if (!isSelected || isViewingDetail) {
+                                detailEntryId = null
+                                activeTab = BottomTab.Settings
                             }
                         },
                         modifier = Modifier,

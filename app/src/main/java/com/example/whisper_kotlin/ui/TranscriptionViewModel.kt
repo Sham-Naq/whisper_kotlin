@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import java.util.concurrent.atomic.AtomicLong
 import java.io.File
+import kotlin.math.roundToInt
 
 /** Snapshot of the current transcription UI. */
 data class TranscriptionUiState(
@@ -24,9 +25,7 @@ data class TranscriptionUiState(
     val isTranscribing: Boolean = false,
     val statusMessage: String? = null,
     val progress: Float? = null,
-    val savedTranscriptions: List<SavedTranscription> = emptyList(),
-    val timestampPreview: String? = null,
-    val timestampPreviewTitle: String? = null
+    val savedTranscriptions: List<SavedTranscription> = emptyList()
 )
 
 @Serializable
@@ -118,10 +117,27 @@ class TranscriptionViewModel(
         return ModelOption(id = spec.id, fileName = spec.fileName, url = spec.url)
     }
 
+    private fun updateProgress(prefix: String, processedChunks: Int, totalChunks: Int) {
+        if (totalChunks <= 0) {
+            _uiState.update { it.copy(progress = null, statusMessage = prefix) }
+            return
+        }
+        val clamped = processedChunks.coerceIn(0, totalChunks)
+        val fraction = clamped.toFloat() / totalChunks
+        val percent = (fraction * 100f).roundToInt().coerceIn(0, 100)
+        _uiState.update { current ->
+            current.copy(
+                progress = fraction,
+                statusMessage = "$prefix $percent%"
+            )
+        }
+    }
+
     private suspend fun performTranscription(
         appContext: Context,
         selectedModel: ModelOption?,
-        audioSource: AudioSource
+        audioSource: AudioSource,
+        onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)? = null
     ): TranscriptionRun {
         val chosen = selectedModel
         val localModel = chosen?.let { opt ->
@@ -139,8 +155,8 @@ class TranscriptionViewModel(
 
         val startMs = SystemClock.elapsedRealtime()
         val transcription = when (audioSource) {
-            is AudioSource.Asset -> WhisperEngine.transcribeWavAsset(appContext, audioSource.assetPath)
-            is AudioSource.File -> WhisperEngine.transcribeWavFile(audioSource.path)
+            is AudioSource.Asset -> WhisperEngine.transcribeWavAsset(appContext, audioSource.assetPath, onProgress)
+            is AudioSource.File -> WhisperEngine.transcribeWavFile(audioSource.path, onProgress)
         }
         val elapsedMs = SystemClock.elapsedRealtime() - startMs
         return TranscriptionRun(
@@ -177,16 +193,15 @@ class TranscriptionViewModel(
                 _uiState.update {
                     it.copy(
                         isTranscribing = true,
-                        progress = 0.1f,
-                        statusMessage = "Loading model…",
-                        timestampPreview = null,
-                        timestampPreviewTitle = null
+                        progress = null,
+                        statusMessage = "Loading model…"
                     )
                 }
-                _uiState.update { it.copy(progress = 0.35f, statusMessage = "Preparing audio…") }
-                _uiState.update { it.copy(progress = null, statusMessage = "Running Whisper…") }
+                _uiState.update { it.copy(statusMessage = "Preparing audio…") }
 
-                val result = performTranscription(appContext, selectedModel, audioSource)
+                val result = performTranscription(appContext, selectedModel, audioSource) { processed, total ->
+                    updateProgress("Transcribing…", processed, total)
+                }
                 val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", result.elapsedMs / 1000.0) + " s (" + result.elapsedMs + " ms)"
                 val providedLabel = transcriptionName?.trim()?.takeIf { it.isNotEmpty() }
                 val fileLabel = providedLabel ?: when (audioSource) {
@@ -240,23 +255,22 @@ class TranscriptionViewModel(
         val entrySnapshot = entry
         val appContext = context.applicationContext
         val source = AudioSource.File(audioFile.absolutePath)
-    val option = selectedModel ?: modelOptionFromLabel(entrySnapshot.modelLabel)
+        val option = selectedModel ?: modelOptionFromLabel(entrySnapshot.modelLabel)
 
         viewModelScope.launch(ioDispatcher) {
             try {
                 _uiState.update {
                     it.copy(
                         isTranscribing = true,
-                        progress = 0.1f,
-                        statusMessage = "Re-transcribing ${entrySnapshot.fileLabel}…",
-                        timestampPreview = null,
-                        timestampPreviewTitle = null
+                        progress = null,
+                        statusMessage = "Re-transcribing ${entrySnapshot.fileLabel}…"
                     )
                 }
-                _uiState.update { it.copy(progress = 0.35f, statusMessage = "Preparing audio…") }
-                _uiState.update { it.copy(progress = null, statusMessage = "Running Whisper…") }
+                _uiState.update { it.copy(statusMessage = "Preparing audio…") }
 
-                val result = performTranscription(appContext, option, source)
+                val result = performTranscription(appContext, option, source) { processed, total ->
+                    updateProgress("Re-transcribing ${entrySnapshot.fileLabel}…", processed, total)
+                }
                 val updatedEntry = entrySnapshot.copy(
                     transcript = result.plainTranscript,
                     timestampedTranscript = result.timestampedTranscript,
@@ -282,29 +296,22 @@ class TranscriptionViewModel(
         }
     }
 
-    fun generateTimestampPreview(context: Context, entryId: Long) {
+    fun ensureTimestampedTranscript(context: Context, entryId: Long) {
         val entry = _uiState.value.savedTranscriptions.firstOrNull { it.id == entryId } ?: return
-        val existing = entry.timestampedTranscript
-        if (!existing.isNullOrBlank()) {
-            _uiState.update {
-                it.copy(
-                    statusMessage = null,
-                    timestampPreview = existing,
-                    timestampPreviewTitle = "${entry.fileLabel} (${entry.modelLabel})"
-                )
-            }
+        if (!entry.timestampedTranscript.isNullOrBlank()) {
+            _uiState.update { it.copy(statusMessage = null) }
             return
         }
 
         val audioPath = entry.audioPath
         if (audioPath.isNullOrBlank()) {
-            appendLog("Cannot generate timestamp preview for ${entry.fileLabel}: audio file missing.")
+            appendLog("Cannot generate timestamps for ${entry.fileLabel}: audio file missing.")
             _uiState.update { it.copy(statusMessage = "Audio missing for ${entry.fileLabel}") }
             return
         }
         val audioFile = File(audioPath)
         if (!audioFile.exists()) {
-            appendLog("Cannot generate timestamp preview for ${entry.fileLabel}: audio file not found.")
+            appendLog("Cannot generate timestamps for ${entry.fileLabel}: audio file not found.")
             _uiState.update { it.copy(statusMessage = "Audio file not found for ${entry.fileLabel}") }
             return
         }
@@ -320,37 +327,36 @@ class TranscriptionViewModel(
 
         viewModelScope.launch(ioDispatcher) {
             try {
-                _uiState.update { it.copy(statusMessage = "Generating timestamp preview…", timestampPreview = null, timestampPreviewTitle = null) }
-                val result = performTranscription(appContext, option, source)
+                _uiState.update {
+                    it.copy(
+                        isTranscribing = true,
+                        progress = null,
+                        statusMessage = "Generating timestamp transcript…"
+                    )
+                }
                 var persisted: List<SavedTranscription> = emptyList()
+                val result = performTranscription(appContext, option, source) { processed, total ->
+                    updateProgress("Generating timestamp transcript…", processed, total)
+                }
                 _uiState.update { current ->
                     val next = current.savedTranscriptions.map { saved ->
                         if (saved.id == entryId) {
-                            saved.copy(
-                                timestampedTranscript = result.timestampedTranscript
-                            )
+                            saved.copy(timestampedTranscript = result.timestampedTranscript)
                         } else saved
                     }
                     persisted = next
-                    current.copy(
-                        statusMessage = null,
-                        savedTranscriptions = next,
-                        timestampPreview = result.timestampedTranscript,
-                        timestampPreviewTitle = "${entry.fileLabel} (${entry.modelLabel})"
-                    )
+                    current.copy(savedTranscriptions = next, statusMessage = null)
                 }
                 if (persisted.isNotEmpty()) {
                     TranscriptionRepository.persist(persisted)
                 }
             } catch (t: Throwable) {
-                appendLog("Timestamp preview failed: $t")
-                _uiState.update { it.copy(statusMessage = "Timestamp preview failed: ${t.message}") }
+                appendLog("Timestamp generation failed: $t")
+                _uiState.update { it.copy(statusMessage = "Timestamp generation failed: ${t.message}") }
+            } finally {
+                _uiState.update { it.copy(isTranscribing = false, progress = null) }
             }
         }
-    }
-
-    fun dismissTimestampPreview() {
-        _uiState.update { it.copy(timestampPreview = null, timestampPreviewTitle = null) }
     }
 
     fun deleteTranscription(context: Context, entryId: Long) {
@@ -378,21 +384,30 @@ class TranscriptionViewModel(
             return
         }
         viewModelScope.launch(ioDispatcher) {
+            var status: String? = null
             try {
                 _uiState.update { it.copy(statusMessage = if (it.isTranscribing) it.statusMessage else "Deleting model…") }
                 val file = ModelManager.getLocalModelFile(appContext, selectedModel.fileName)
                 if (file.exists()) {
                     val ok = withContext(ioDispatcher) { file.delete() }
                     WhisperEngine.reset()
-                    appendLog(if (ok) "Deleted model: ${file.name}" else "Failed to delete: ${file.name}")
+                    if (ok) {
+                        appendLog("Deleted model: ${file.name}")
+                        status = "${selectedModel.id} deleted successfully"
+                    } else {
+                        appendLog("Failed to delete: ${file.name}")
+                        status = "Failed to delete ${selectedModel.id}"
+                    }
                 } else {
                     appendLog("Model not found locally: ${selectedModel.fileName}")
+                    status = "Model not found locally"
                 }
             } catch (t: Throwable) {
                 appendLog("Delete failed: $t")
+                status = "Delete failed: ${t.message}"
             } finally {
                 _uiState.update { current ->
-                    if (current.isTranscribing) current else current.copy(statusMessage = null)
+                    if (current.isTranscribing) current else current.copy(statusMessage = status)
                 }
             }
         }

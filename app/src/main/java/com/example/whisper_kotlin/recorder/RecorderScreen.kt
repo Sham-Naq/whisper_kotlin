@@ -21,9 +21,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.Icon
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Slider
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -46,6 +49,7 @@ import com.example.whisper_kotlin.ModelSelectorRow
 import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.TranscriptionViewModel
 import com.example.whisper_kotlin.FileSelectorRow
+import com.example.whisper_kotlin.ModelManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -78,6 +82,7 @@ fun RecorderScreen(
     var isRecording by remember { mutableStateOf(false) }
     var rawFile by remember { mutableStateOf<File?>(null) }
     var wavFile by remember { mutableStateOf<File?>(null) }
+    var showDeleteModelDialog by remember { mutableStateOf(false) }
 
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
@@ -247,6 +252,10 @@ fun RecorderScreen(
 
     val modelDownloadVm: ModelDownloadViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val modelDownloadState by modelDownloadVm.uiState.collectAsState()
+
+    LaunchedEffect(modelDownloadState.downloadingId) {
+        onModelDownloadingChanged(modelDownloadState.downloadingId != null)
+    }
 
     LaunchedEffect(selectedModel) {
         // Keep external selection in sync when coming back
@@ -446,13 +455,48 @@ fun RecorderScreen(
             ActionButton(
                 label = "Delete model",
                 color = textColor,
-                enabled = !transcriptionUi.isTranscribing
+                enabled = !transcriptionUi.isTranscribing && selectedModel != null
             ) {
-                transcriptionViewModel.deleteModel(context, selectedModel)
+                showDeleteModelDialog = true
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        if (showDeleteModelDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteModelDialog = false },
+                title = {
+                    Text("Delete model?", color = textColor, fontWeight = FontWeight.SemiBold)
+                },
+                text = {
+                    val modelName = selectedModel?.id ?: "this model"
+                    Text(
+                        "This will remove $modelName from local storage. You'll need to download it again to use it later.",
+                        color = textColor.copy(alpha = 0.85f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteModelDialog = false
+                        val fallbackSpec = ModelManager.defaultModel()
+                        transcriptionViewModel.deleteModel(context, selectedModel)
+                        if (selectedModel != null && fallbackSpec != null) {
+                            val fallbackOption = ModelOption(fallbackSpec.id, fallbackSpec.fileName, fallbackSpec.url)
+                            onSelectModel(fallbackOption)
+                            modelDownloadVm.setSelectedModel(fallbackOption)
+                        }
+                    }) {
+                        Text("Delete", color = Color(0xFFE57373))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteModelDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
 
         transcriptionUi.statusMessage?.let { message ->
             androidx.compose.foundation.text.BasicText(

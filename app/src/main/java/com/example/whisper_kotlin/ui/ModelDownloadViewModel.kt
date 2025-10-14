@@ -33,6 +33,10 @@ class ModelDownloadViewModel(
         _uiState.update { it.copy(isCancelling = true, message = "Cancelling…") }
     }
 
+    fun setSelectedModel(option: ModelOption?) {
+        _uiState.update { it.copy(selectedModel = option) }
+    }
+
     fun selectIfPresent(context: Context, option: ModelOption) {
         viewModelScope.launch(ioDispatcher) {
             val file = ModelManager.getLocalModelFile(context.applicationContext, option.fileName)

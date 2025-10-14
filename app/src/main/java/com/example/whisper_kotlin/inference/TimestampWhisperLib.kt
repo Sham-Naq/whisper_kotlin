@@ -14,9 +14,16 @@ import java.util.concurrent.Executors
 
 private const val TIMESTAMP_LOG_TAG = "TimestampWhisperLib"
 
+data class WhisperSegment(
+    val text: String,
+    val t0: Long,
+    val t1: Long
+)
+
 data class WhisperTranscription(
     val plain: String,
-    val timestamped: String
+    val timestamped: String,
+    val segments: List<WhisperSegment>
 )
 
 class TimestampWhisperContext private constructor(private var ptr: Long) {
@@ -36,23 +43,26 @@ class TimestampWhisperContext private constructor(private var ptr: Long) {
                 val textCount = WhisperLib.getTextSegmentCount(ptr)
                 val plainBuilder = StringBuilder()
                 val timestampBuilder = StringBuilder()
+                val segments = ArrayList<WhisperSegment>(textCount)
                 for (i in 0 until textCount) {
                     val segment = WhisperLib.getTextSegment(ptr, i)
                     plainBuilder.append(segment)
 
                     val t0 = WhisperLib.getTextSegmentT0(ptr, i)
                     val t1 = WhisperLib.getTextSegmentT1(ptr, i)
-                    timestampBuilder.append("[")
+                    segments.add(WhisperSegment(segment, t0, t1))
+                    timestampBuilder.append('(')
                     timestampBuilder.append(toTimestamp(t0))
-                    timestampBuilder.append(" --> ")
-                    timestampBuilder.append(toTimestamp(t1))
-                    timestampBuilder.append("]: ")
-                    timestampBuilder.append(segment)
-                    timestampBuilder.append('\n')
+                    timestampBuilder.append(") ")
+                    timestampBuilder.append(segment.trimStart { it == ' ' })
+                    if (!segment.endsWith('\n')) {
+                        timestampBuilder.append('\n')
+                    }
                 }
                 WhisperTranscription(
                     plain = plainBuilder.toString(),
-                    timestamped = timestampBuilder.toString()
+                    timestamped = timestampBuilder.toString(),
+                    segments = segments
                 )
             }
         }).get()
@@ -128,12 +138,14 @@ class TimestampWhisperContext private constructor(private var ptr: Long) {
 }
 
 private fun toTimestamp(t: Long): String {
-    var msec = t * 10
-    val hr = msec / (1000 * 60 * 60)
-    msec -= hr * (1000 * 60 * 60)
-    val min = msec / (1000 * 60)
-    msec -= min * (1000 * 60)
-    val sec = msec / 1000
-    msec -= sec * 1000
-    return String.format("%02d:%02d:%02d.%03d", hr, min, sec, msec)
+    val totalMillis = t * 10
+    val totalSeconds = totalMillis / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        String.format("%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format("%d:%02d", minutes, seconds)
+    }
 }

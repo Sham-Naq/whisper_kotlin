@@ -80,6 +80,9 @@ object ModelManager {
     /** Expose catalog to UI layers (read-only). */
     fun availableModels(): List<ModelSpec> = AVAILABLE_MODELS
 
+    /** First entry in the catalog, treated as default for UI fallbacks. */
+    fun defaultModel(): ModelSpec? = AVAILABLE_MODELS.firstOrNull()
+
     /** Find a model by id (e.g., "ggml-tiny-q5_1") or by exact fileName (e.g., "ggml-tiny-q5_1.bin"). */
     fun findModel(idOrFileName: String): ModelSpec? = AVAILABLE_MODELS.firstOrNull { spec ->
         spec.id.equals(idOrFileName, ignoreCase = true) || spec.fileName.equals(idOrFileName, ignoreCase = true)

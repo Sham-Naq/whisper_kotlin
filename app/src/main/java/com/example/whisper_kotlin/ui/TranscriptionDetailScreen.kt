@@ -2,6 +2,7 @@ package com.example.whisper_kotlin
 
 import android.media.MediaPlayer
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -46,11 +48,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -74,9 +81,11 @@ fun TranscriptionDetailScreen(
     onDelete: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currentEntry = uiState.savedTranscriptions.firstOrNull { it.id == entry.id } ?: entry
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    val currentEntry = uiState.savedTranscriptions.firstOrNull { it.id == entry.id } ?: entry
+    var showTimestamps by remember(currentEntry.id) { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
     val isDark = isSystemInDarkTheme()
     val selectorButtonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6)
     val modelDownloadViewModel: ModelDownloadViewModel = viewModel()
@@ -176,7 +185,12 @@ fun TranscriptionDetailScreen(
         }
     }
 
-    Column(modifier = modifier.padding(16.dp)) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(16.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -222,13 +236,32 @@ fun TranscriptionDetailScreen(
                     showReTranscribeDialog = true
                 }
             )
+            val timestampAvailable = !currentEntry.timestampedTranscript.isNullOrBlank() || audioFile != null
             DetailActionIcon(
                 icon = Icons.Filled.AccessTime,
                 tint = Color(0xFFBA68C8),
                 background = Color(0xFFBA68C8),
-                contentDescription = "Show with timestamps",
-                enabled = !uiState.isTranscribing && (currentEntry.timestampedTranscript != null || currentEntry.audioPath != null),
-                onClick = { viewModel.generateTimestampPreview(context, currentEntry.id) }
+                contentDescription = if (showTimestamps) "Hide timestamps" else "Show with timestamps",
+                strikeThrough = showTimestamps,
+                enabled = !uiState.isTranscribing && timestampAvailable,
+                onClick = {
+                    if (showTimestamps) {
+                        showTimestamps = false
+                    } else {
+                        val existing = currentEntry.timestampedTranscript
+                        if (!existing.isNullOrBlank()) {
+                            showTimestamps = true
+                        } else {
+                            val hasAudio = audioFile != null
+                            if (hasAudio) {
+                                showTimestamps = true
+                                viewModel.ensureTimestampedTranscript(context, currentEntry.id)
+                            } else {
+                                Toast.makeText(context, "Original audio missing", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
             )
             DetailActionIcon(
                 icon = Icons.Filled.ContentCopy,
@@ -236,7 +269,12 @@ fun TranscriptionDetailScreen(
                 background = Color(0xFF64B5F6),
                 contentDescription = "Copy transcript",
                 onClick = {
-                    clipboardManager.setText(AnnotatedString(currentEntry.transcript))
+                    val textToCopy = if (showTimestamps) {
+                        currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: currentEntry.transcript
+                    } else {
+                        currentEntry.transcript
+                    }
+                    clipboardManager.setText(AnnotatedString(textToCopy))
                     Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
                 }
             )
@@ -318,46 +356,44 @@ fun TranscriptionDetailScreen(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+        val transcriptLabel = if (showTimestamps) "Transcript (timestamps)" else "Transcript"
         BasicText(
-            text = "Transcript",
+            text = transcriptLabel,
             style = TextStyle(color = textColor, fontWeight = FontWeight.Bold)
         )
         Spacer(modifier = Modifier.height(8.dp))
-        BasicText(
-            text = currentEntry.transcript,
-            style = TextStyle(color = textColor.copy(alpha = 0.85f))
-        )
-    }
-
-    val previewText = uiState.timestampPreview
-    if (previewText != null) {
-        val previewTitle = uiState.timestampPreviewTitle ?: "Transcript (timestamps)"
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissTimestampPreview() },
-            title = { Text(previewTitle, color = textColor, fontWeight = FontWeight.SemiBold) },
-            text = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(previewText, color = textColor.copy(alpha = 0.85f))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissTimestampPreview() }) {
-                    Text("Close")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    clipboardManager.setText(AnnotatedString(previewText))
-                    Toast.makeText(context, "Copied with timestamps", Toast.LENGTH_SHORT).show()
-                }) {
-                    Text("Copy")
+        val transcriptBody = when {
+            showTimestamps -> currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: "Generating timestamps…"
+            else -> currentEntry.transcript
+        }
+        val bodyStyle = TextStyle(color = textColor.copy(alpha = 0.85f))
+        val annotatedTranscript = remember(transcriptBody, showTimestamps, textColor) {
+            if (!showTimestamps) {
+                AnnotatedString(transcriptBody)
+            } else {
+                val timestampStyle = SpanStyle(color = textColor.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                val lines = transcriptBody.split('\n')
+                buildAnnotatedString {
+                    lines.forEachIndexed { index, line ->
+                        if (line.isNotEmpty() && line.startsWith('(') && line.indexOf(')') > 0) {
+                            val endIndex = line.indexOf(')')
+                            withStyle(timestampStyle) {
+                                append(line.substring(0, endIndex + 1))
+                            }
+                            append(line.substring(endIndex + 1))
+                        } else {
+                            append(line)
+                        }
+                        if (index < lines.size - 1) {
+                            append('\n')
+                        }
+                    }
                 }
             }
+        }
+        BasicText(
+            text = annotatedTranscript,
+            style = bodyStyle
         )
     }
 
@@ -447,6 +483,7 @@ private fun DetailActionIcon(
     tint: Color,
     background: Color,
     contentDescription: String,
+    strikeThrough: Boolean = false,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
@@ -460,5 +497,54 @@ private fun DetailActionIcon(
         contentAlignment = Alignment.Center
     ) {
         Icon(imageVector = icon, contentDescription = contentDescription, tint = tint)
+        if (strikeThrough) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = size.minDimension * 0.12f
+                drawLine(
+                    color = tint,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+    }
+}
+
+private fun normalizeTimestampTranscript(raw: String): String {
+    if (!raw.contains('[')) return raw
+    val lines = raw.split('\n')
+    val converted = lines.map { convertLegacyTimestampLine(it) }
+    val joined = converted.joinToString("\n")
+    return if (raw.endsWith('\n')) joined + "\n" else joined
+}
+
+private fun convertLegacyTimestampLine(line: String): String {
+    if (!line.startsWith("[")) return line
+    val closingIndex = line.indexOf("]: ")
+    if (closingIndex <= 0) return line
+    val header = line.substring(1, closingIndex)
+    val startToken = header.substringBefore(" -->").trim()
+    val concise = conciseTimestampToken(startToken)
+    val remainder = line.substring(closingIndex + 3).trimStart()
+    return if (remainder.isEmpty()) "(${concise})" else "(${concise}) $remainder"
+}
+
+private fun conciseTimestampToken(token: String): String {
+    if (token.isBlank()) return token
+    val parts = token.split(':')
+    if (parts.size < 3) return token
+    val hours = parts.getOrNull(0)?.toIntOrNull() ?: 0
+    val minutes = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    val seconds = parts.getOrNull(2)?.substringBefore('.')?.toIntOrNull() ?: 0
+    val totalSeconds = hours * 3600 + minutes * 60 + seconds
+    val outHours = totalSeconds / 3600
+    val outMinutes = (totalSeconds % 3600) / 60
+    val outSeconds = totalSeconds % 60
+    return if (outHours > 0) {
+        "${outHours}:${outMinutes.toString().padStart(2, '0')}:${outSeconds.toString().padStart(2, '0')}"
+    } else {
+        "${outMinutes}:${outSeconds.toString().padStart(2, '0')}"
     }
 }
