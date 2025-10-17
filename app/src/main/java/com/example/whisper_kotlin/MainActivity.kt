@@ -85,6 +85,12 @@ private enum class BottomTab(val route: String, val header: String) {
     Settings(route = "settings", header = "Settings")
 }
 
+enum class ThemePreference {
+    System,
+    Light,
+    Dark
+}
+
 private val bottomTabOrder: List<BottomTab> = listOf(
     BottomTab.Transcription,
     BottomTab.Recorder,
@@ -96,8 +102,15 @@ private val bottomTabOrder: List<BottomTab> = listOf(
 private fun HomeScreen() {
     var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
     var detailEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var themeSelection by rememberSaveable { mutableStateOf(ThemePreference.System.name) }
+    val themePreference = remember(themeSelection) { ThemePreference.valueOf(themeSelection) }
 
-    val isDark = isSystemInDarkTheme()
+    val systemDark = isSystemInDarkTheme()
+    val isDark = when (themePreference) {
+        ThemePreference.System -> systemDark
+        ThemePreference.Light -> false
+        ThemePreference.Dark -> true
+    }
     val background = if (isDark) Color(0xFF121212) else Color(0xFFF7F7F7)
     val headerBg = if (isDark) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
     val primaryTextColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF0D47A1)
@@ -216,7 +229,12 @@ private fun HomeScreen() {
                             )
                         }
                         BottomTab.Settings -> {
-                            SettingsScreen(Modifier.fillMaxSize(), textColor = primaryTextColor)
+                            SettingsScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                textColor = primaryTextColor,
+                                themePreference = themePreference,
+                                onThemePreferenceChange = { newPref -> themeSelection = newPref.name }
+                            )
                         }
                     }
                 }

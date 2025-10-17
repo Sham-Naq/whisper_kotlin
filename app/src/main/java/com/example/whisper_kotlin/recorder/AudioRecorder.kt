@@ -42,6 +42,7 @@ class AudioRecorder(
 
     fun start(outputRawFile: java.io.File? = null) {
         if (job != null) return
+        paused = false
         val rec = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             sampleRate,
@@ -102,6 +103,7 @@ class AudioRecorder(
     fun resume() { paused = false }
 
     suspend fun stop() {
+        paused = false
         job?.cancelAndJoin()
         job = null
         record?.let {

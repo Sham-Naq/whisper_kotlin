@@ -4,6 +4,12 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -325,91 +331,106 @@ fun RecorderScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        when {
-            isRecording -> {
-                LineBarWaveform(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .background(if (isDark) Color(0xFF181818) else Color(0xFFF0F0F0)),
-                    bars = bars,
-                    color = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5),
-                    backgroundColor = null
-                )
-            }
-            canPlayRecording -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, textColor.copy(alpha = 0.2f), CircleShape)
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .background(Color(0xFF424242), CircleShape)
-                                .clickable(enabled = canPlayRecording) {
-                                    val player = mediaPlayer
-                                    if (player != null) {
-                                        if (isPlaying) {
-                                            player.pause()
-                                            isPlaying = false
-                                        } else {
-                                            player.start()
-                                            isPlaying = true
+        AnimatedVisibility(
+            visible = isRecording,
+            modifier = Modifier.fillMaxWidth(),
+            enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                expandVertically(
+                    expandFrom = Alignment.CenterVertically,
+                    animationSpec = tween(durationMillis = 320)
+                ),
+            exit = shrinkVertically(
+                shrinkTowards = Alignment.CenterVertically,
+                animationSpec = tween(durationMillis = 240)
+            ) + fadeOut(animationSpec = tween(durationMillis = 180))
+        ) {
+            LineBarWaveform(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .background(if (isDark) Color(0xFF181818) else Color(0xFFF0F0F0)),
+                bars = bars,
+                color = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5),
+                backgroundColor = null
+            )
+        }
+
+        if (!isRecording) {
+            when {
+                canPlayRecording -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, textColor.copy(alpha = 0.2f), CircleShape)
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(Color(0xFF424242), CircleShape)
+                                    .clickable(enabled = canPlayRecording) {
+                                        val player = mediaPlayer
+                                        if (player != null) {
+                                            if (isPlaying) {
+                                                player.pause()
+                                                isPlaying = false
+                                            } else {
+                                                player.start()
+                                                isPlaying = true
+                                            }
                                         }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause playback" else "Play recording",
-                                tint = Color.White
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Slider(
-                                value = playbackProgress,
-                                onValueChange = { value ->
-                                    playbackProgress = value
-                                    val player = mediaPlayer
-                                    if (player != null && playbackDurationMs > 0) {
-                                        val target = (value * playbackDurationMs).toInt().coerceIn(0, playbackDurationMs)
-                                        player.seekTo(target)
-                                        playbackPositionMs = target
-                                    }
-                                },
-                                valueRange = 0f..1f,
-                                enabled = canPlayRecording
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
-                                androidx.compose.foundation.text.BasicText(
-                                    text = formatTime(playbackPositionMs),
-                                    style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause playback" else "Play recording",
+                                    tint = Color.White
                                 )
-                                androidx.compose.foundation.text.BasicText(
-                                    text = formatTime(playbackDurationMs),
-                                    style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Slider(
+                                    value = playbackProgress,
+                                    onValueChange = { value ->
+                                        playbackProgress = value
+                                        val player = mediaPlayer
+                                        if (player != null && playbackDurationMs > 0) {
+                                            val target = (value * playbackDurationMs).toInt().coerceIn(0, playbackDurationMs)
+                                            player.seekTo(target)
+                                            playbackPositionMs = target
+                                        }
+                                    },
+                                    valueRange = 0f..1f,
+                                    enabled = canPlayRecording
                                 )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    androidx.compose.foundation.text.BasicText(
+                                        text = formatTime(playbackPositionMs),
+                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                    )
+                                    androidx.compose.foundation.text.BasicText(
+                                        text = formatTime(playbackDurationMs),
+                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
-            else -> {
-                FileSelectorRow(
-                    textColor = textColor,
-                    isDark = isDark,
-                    buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
-                    source = audioSource,
-                    onSourceChanged = onAudioSourceChanged
-                )
+                else -> {
+                    FileSelectorRow(
+                        textColor = textColor,
+                        isDark = isDark,
+                        buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+                        source = audioSource,
+                        onSourceChanged = onAudioSourceChanged
+                    )
+                }
             }
         }
 

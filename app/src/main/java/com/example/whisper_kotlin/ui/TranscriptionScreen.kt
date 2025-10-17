@@ -154,7 +154,7 @@ fun TranscriptionScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 BasicText(
-                                    text = "Saved: $timestamp",
+                                    text = "$timestamp",
                                     style = TextStyle(color = textColor.copy(alpha = 0.6f))
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
