@@ -61,6 +61,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.graphics.luminance
 import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.ModelManager
 import com.example.whisper_kotlin.ModelOption
@@ -88,6 +89,9 @@ fun TranscriptionDetailScreen(
     val scrollState = rememberScrollState()
     val isDark = isSystemInDarkTheme()
     val selectorButtonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6)
+    val dialogBackground = remember(textColor) {
+        if (textColor.luminance() > 0.5f) Color(0xFF1E1E1E) else Color.White
+    }
     val modelDownloadViewModel: ModelDownloadViewModel = viewModel()
     val modelDownloadState by modelDownloadViewModel.uiState.collectAsState()
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -400,6 +404,8 @@ fun TranscriptionDetailScreen(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
+            backgroundColor = dialogBackground,
+            contentColor = textColor,
             title = { Text("Delete transcription?", color = textColor, fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
@@ -426,6 +432,8 @@ fun TranscriptionDetailScreen(
     if (showReTranscribeDialog) {
         AlertDialog(
             onDismissRequest = { showReTranscribeDialog = false },
+            backgroundColor = dialogBackground,
+            contentColor = textColor,
             title = { Text("Re-transcribe recording", color = textColor, fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

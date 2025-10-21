@@ -46,6 +46,7 @@ import java.util.Locale
 // Not strictly required if in the same package, but safe to keep explicit
 // import com.example.whisper_kotlin.ModelManager
 // import com.example.whisper_kotlin.WhisperEngine
+import androidx.compose.ui.graphics.luminance
 
 
 
@@ -62,7 +63,6 @@ fun ActionButton(label: String, color: Color, enabled: Boolean = true, onClick: 
         BasicText(label, style = TextStyle(color = color, fontWeight = FontWeight.Medium))
     }
 }
-
 @Composable
 fun TranscriptionScreen(
     modifier: Modifier = Modifier,
@@ -74,6 +74,9 @@ fun TranscriptionScreen(
     val context = LocalContext.current
     var pendingDelete by remember { mutableStateOf<SavedTranscription?>(null) }
     Column(modifier = modifier) {
+        val dialogBackground = remember(textColor) {
+            if (textColor.luminance() > 0.5f) Color(0xFF1E1E1E) else Color.White
+        }
         val progress = uiState.progress
         val statusMessage = uiState.statusMessage
 
@@ -189,6 +192,8 @@ fun TranscriptionScreen(
         if (entryToDelete != null) {
             AlertDialog(
                 onDismissRequest = { pendingDelete = null },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
                 title = {
                     Text(
                         text = "Delete transcription?",

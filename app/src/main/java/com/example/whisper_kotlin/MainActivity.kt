@@ -113,7 +113,7 @@ private fun HomeScreen() {
     }
     val background = if (isDark) Color(0xFF121212) else Color(0xFFF7F7F7)
     val headerBg = if (isDark) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
-    val primaryTextColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF0D47A1)
+    val primaryTextColor = if (isDark) Color.White else Color.Black
     val bottomBarBg = if (isDark) Color(0xFF1A1A1A) else Color.White
     val bottomBarDivider = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE6E6E6)
     val navSelectedBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)

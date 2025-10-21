@@ -64,6 +64,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.graphics.luminance
 
 @Composable
 fun RecorderScreen(
@@ -278,6 +279,9 @@ fun RecorderScreen(
             }
             .padding(16.dp)
     ) {
+        val dialogBackground = remember(textColor) {
+            if (textColor.luminance() > 0.5f) Color(0xFF1E1E1E) else Color.White
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -487,6 +491,8 @@ fun RecorderScreen(
         if (showDeleteModelDialog) {
             AlertDialog(
                 onDismissRequest = { showDeleteModelDialog = false },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
                 title = {
                     Text("Delete model?", color = textColor, fontWeight = FontWeight.SemiBold)
                 },

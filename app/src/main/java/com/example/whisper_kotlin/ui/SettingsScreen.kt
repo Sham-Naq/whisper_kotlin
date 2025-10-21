@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.Icon
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.luminance
 
 @Composable
 fun SettingsScreen(
@@ -56,6 +58,9 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.weight(1f))
             Box {
+                val menuBackground = remember(textColor) {
+                    if (textColor.luminance() > 0.5f) Color(0xFF1E1E1E) else Color.White
+                }
                 Row(
                     modifier = Modifier
                         .border(1.dp, textColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
@@ -75,13 +80,18 @@ fun SettingsScreen(
                     )
                 }
 
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.background(menuBackground)
+                ) {
                     ThemePreference.values().forEach { option ->
                         DropdownMenuItem(
                             onClick = {
                                 expanded = false
                                 onThemePreferenceChange(option)
-                            }
+                            },
+                            modifier = Modifier.background(menuBackground)
                         ) {
                             BasicText(
                                 text = labels[option] ?: option.name,
