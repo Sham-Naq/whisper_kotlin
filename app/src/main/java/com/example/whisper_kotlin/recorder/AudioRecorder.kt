@@ -32,6 +32,8 @@ class AudioRecorder(
     private var job: Job? = null
     private var output: java.io.OutputStream? = null
     @Volatile private var paused: Boolean = false
+    
+    val isPaused: Boolean get() = paused
 
     private val _bars = MutableStateFlow(FloatArray(barCount) { 0f })
     val bars: StateFlow<FloatArray> = _bars

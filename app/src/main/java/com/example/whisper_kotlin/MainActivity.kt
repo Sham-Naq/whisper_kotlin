@@ -6,11 +6,13 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.animateFloatAsState
@@ -44,8 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.PopupPositionProvider
@@ -62,14 +65,20 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.whisper_kotlin.TranscriptionViewModel
 import com.example.whisper_kotlin.data.TranscriptionRepository
 // Material icons for bottom navigation
+import androidx.compose.material.AlertDialog
 import androidx.compose.material.Icon
-import androidx.compose.material.icons.Icons
+import androidx.compose.material.IconButton
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.ui.graphics.luminance
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,8 +166,23 @@ private fun HomeScreen() {
             modifier = Modifier
                 .fillMaxWidth()
                 .background(headerBg)
-                .padding(vertical = 16.dp, horizontal = 20.dp)
+                .padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
+            // Back button (only visible when viewing detail)
+            if (detailEntry != null) {
+                IconButton(
+                    onClick = { detailEntryId = null },
+                    modifier = Modifier.align(Alignment.CenterStart)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = primaryTextColor
+                    )
+                }
+            }
+            
+            // Centered title
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
@@ -340,98 +364,26 @@ private fun HomeScreen() {
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    val isRecorder = activeTab == BottomTab.Recorder
-                    val offsetY by animateDpAsState(
-                        targetValue = if (isRecorder) (-24).dp else 0.dp,
-                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-                        label = "micOffset"
-                    )
-                    val circleSize by animateDpAsState(
-                        targetValue = if (isRecorder) 64.dp else 56.dp,
-                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-                        label = "micSize"
-                    )
-                    val circleColor by animateColorAsState(
-                        targetValue = if (isRecorder) activeIconColor else Color.Transparent,
-                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-                        label = "micBg"
-                    )
-                    Box(
-                        modifier = Modifier
-                            .offset(y = offsetY)
-                            .size(circleSize)
-                            .background(circleColor, CircleShape)
-                            .clickable {
-                                if (!isRecorder) {
-                                    detailEntryId = null
-                                    activeTab = BottomTab.Recorder
-                                    isRecorderPaused = false
-                                } else {
-                                    if (isRecording) {
-                                        isRecorderPaused = false
-                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Stop
-                                    } else {
-                                        isRecorderPaused = false
-                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Start
-                                    }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
+                    val isRecorder = highlightedTab == BottomTab.Recorder
+                    BottomNavItem(
+                        selected = isRecorder,
+                        onClick = {
+                            detailEntryId = null
+                            activeTab = BottomTab.Recorder
+                        },
+                        modifier = Modifier,
+                        selectedBgColor = navSelectedBg,
+                        unselectedBgColor = navUnselectedBg,
+                        selectedBorderColor = Color.Transparent,
+                        unselectedBorderColor = Color.Transparent,
+                        drawContainer = false
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Mic,
                             contentDescription = "Recorder",
-                            tint = if (isRecorder) Color.White else inactiveIconColor,
+                            tint = if (isRecorder) activeIconColor else inactiveIconColor,
                             modifier = Modifier.size(42.dp)
                         )
-                    }
-
-                    if (isRecorder && isRecording) {
-                        val pauseIcon = if (isRecorderPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause
-                        val pauseDescription = if (isRecorderPaused) "Resume" else "Pause"
-                        Row(
-                            modifier = Modifier.offset(y = (-210).dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .background(Color(0xFF424242), CircleShape)
-                                    .clickable {
-                                        if (isRecorderPaused) {
-                                            isRecorderPaused = false
-                                            recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Resume
-                                        } else {
-                                            isRecorderPaused = true
-                                            recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Pause
-                                        }
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                androidx.compose.material.Icon(
-                                    imageVector = pauseIcon,
-                                    contentDescription = pauseDescription,
-                                    tint = Color.White
-                                )
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .background(Color(0xFFE53935), CircleShape)
-                                    .clickable {
-                                        isRecorderPaused = false
-                                        recorderCommand = com.example.whisper_kotlin.recorder.RecorderCommand.Stop
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                androidx.compose.material.Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Filled.Stop,
-                                    contentDescription = "Stop",
-                                    tint = Color.White
-                                )
-                            }
-                        }
                     }
                 }
 
@@ -483,16 +435,26 @@ private fun BottomNavItem(
 ) {
     val bg = if (selected) selectedBgColor else unselectedBgColor
     val borderColor = if (selected) selectedBorderColor else unselectedBorderColor
+    val shape = RoundedCornerShape(10.dp)
     val base = if (drawContainer) {
         modifier
-            .background(bg, RoundedCornerShape(10.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(10.dp))
+            .clip(shape)
+            .background(bg, shape)
+            .border(1.dp, borderColor, shape)
     } else {
         modifier
     }
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = base
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(
+                    bounded = drawContainer,
+                    color = Color.Gray.copy(alpha = 0.3f)
+                ),
+                onClick = onClick
+            )
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {

@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -111,7 +113,10 @@ fun FileSelectorRow(
             Box(
                 modifier = Modifier
                     .background(buttonBg, RoundedCornerShape(8.dp))
-                    .clickable { expanded = !expanded }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(color = Color.Gray.copy(alpha = 0.3f))
+                    ) { expanded = !expanded }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -126,7 +131,10 @@ fun FileSelectorRow(
             Box(
                 modifier = Modifier
                     .onGloballyPositioned { coordinates -> labelSize = coordinates.size }
-                    .clickable { expanded = !expanded }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(color = Color.Gray.copy(alpha = 0.3f))
+                    ) { expanded = !expanded }
             ) {
                 BasicText(
                     text = selectedLabel,

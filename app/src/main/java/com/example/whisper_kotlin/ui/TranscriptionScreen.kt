@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.Icon
@@ -34,6 +35,7 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.TextButton
+import androidx.compose.material.ripple
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -56,7 +58,12 @@ fun ActionButton(label: String, color: Color, enabled: Boolean = true, onClick: 
         modifier = Modifier
             .alpha(if (enabled) 1f else 0.45f)
             .border(1.dp, color, RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = color.copy(alpha = 0.3f)),
+                onClick = onClick
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -137,7 +144,10 @@ fun TranscriptionScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .border(1.dp, textColor.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                            .clickable { onOpenTranscription(entry.id) }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(color = textColor.copy(alpha = 0.2f))
+                            ) { onOpenTranscription(entry.id) }
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
                         Row(
