@@ -79,12 +79,35 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.ui.graphics.luminance
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowInsetsControllerCompat
+import com.example.compose.AppTheme
+import androidx.compose.material3.MaterialTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         TranscriptionRepository.initialize(applicationContext)
-        setContent { HomeScreen() }
+        setContent {
+            AppTheme {
+                HomeScreen()
+                
+                // Set status bar color based on theme
+                val statusBarColor = MaterialTheme.colorScheme.surface
+                val isDark = isSystemInDarkTheme()
+                
+                SideEffect {
+                    window.statusBarColor = statusBarColor.toArgb()
+                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                    
+                    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.isAppearanceLightStatusBars = !isDark
+                    insetsController.isAppearanceLightNavigationBars = !isDark
+                }
+            }
+        }
     }
 }
 
@@ -120,15 +143,15 @@ private fun HomeScreen() {
         ThemePreference.Light -> false
         ThemePreference.Dark -> true
     }
-    val background = if (isDark) Color(0xFF121212) else Color(0xFFF7F7F7)
-    val headerBg = if (isDark) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
-    val primaryTextColor = if (isDark) Color.White else Color.Black
-    val bottomBarBg = if (isDark) Color(0xFF1A1A1A) else Color.White
-    val bottomBarDivider = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE6E6E6)
-    val navSelectedBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
-    val navUnselectedBg = if (isDark) Color(0xFF222222) else Color(0xFFF5F5F5)
-    val activeIconColor = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5)
-    val inactiveIconColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF888888)
+    val background = MaterialTheme.colorScheme.background
+    val headerBg = MaterialTheme.colorScheme.surface
+    val primaryTextColor = MaterialTheme.colorScheme.onBackground
+    val bottomBarBg = MaterialTheme.colorScheme.surface
+    val bottomBarDivider = MaterialTheme.colorScheme.outlineVariant
+    val navSelectedBg = MaterialTheme.colorScheme.primaryContainer
+    val navUnselectedBg = MaterialTheme.colorScheme.surfaceVariant
+    val activeIconColor = MaterialTheme.colorScheme.primary
+    val inactiveIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     var recorderCommand by remember { mutableStateOf<com.example.whisper_kotlin.recorder.RecorderCommand?>(null) }
     var isRecording by remember { mutableStateOf(false) }
@@ -161,7 +184,7 @@ private fun HomeScreen() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(background)) {
+    Column(modifier = Modifier.fillMaxSize().background(background).windowInsetsPadding(WindowInsets.systemBars)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()

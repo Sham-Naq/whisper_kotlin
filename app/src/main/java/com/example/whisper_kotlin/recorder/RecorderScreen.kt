@@ -68,6 +68,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.material3.MaterialTheme
 
 @Composable
 fun RecorderScreen(
@@ -287,7 +288,7 @@ fun RecorderScreen(
 
     var transcriptionName by rememberSaveable { mutableStateOf(generateDefaultTranscriptionName()) }
 
-    val selectorButtonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6)
+    val selectorButtonBg = MaterialTheme.colorScheme.surfaceVariant
 
     val modelDownloadVm: ModelDownloadViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val modelDownloadState by modelDownloadVm.uiState.collectAsState()
@@ -311,9 +312,7 @@ fun RecorderScreen(
             }
             .padding(16.dp)
     ) {
-        val dialogBackground = remember(textColor) {
-            if (textColor.luminance() > 0.5f) Color(0xFF1E1E1E) else Color.White
-        }
+        val dialogBackground = MaterialTheme.colorScheme.surface
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -374,9 +373,9 @@ fun RecorderScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(160.dp)
-                    .background(if (isDark) Color(0xFF181818) else Color(0xFFF0F0F0)),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 bars = bars,
-                color = if (isDark) Color(0xFF90CAF9) else Color(0xFF1E88E5),
+                color = MaterialTheme.colorScheme.primary,
                 backgroundColor = null
             )
         }
@@ -395,11 +394,11 @@ fun RecorderScreen(
                             Box(
                                 modifier = Modifier
                                     .size(52.dp)
-                                    .background(Color(0xFF424242), CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
                                     .clickable(
                                         enabled = canPlayRecording,
                                         interactionSource = remember { MutableInteractionSource() },
-                                        indication = ripple(color = Color.White.copy(alpha = 0.3f), bounded = true)
+                                        indication = ripple(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.3f), bounded = true)
                                     ) {
                                         val player = mediaPlayer
                                         if (player != null) {
@@ -420,7 +419,7 @@ fun RecorderScreen(
                                     tint = Color.White
                                 )
                             }
-                            Spacer(modifier = Modifier.width(16.dp))
+                            //Spacer(modifier = Modifier.width(16.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Slider(
                                     value = playbackProgress,
@@ -457,7 +456,7 @@ fun RecorderScreen(
                     FileSelectorRow(
                         textColor = textColor,
                         isDark = isDark,
-                        buttonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6),
+                        buttonBg = MaterialTheme.colorScheme.surfaceVariant,
                         source = audioSource,
                         onSourceChanged = onAudioSourceChanged
                     )
@@ -533,7 +532,7 @@ fun RecorderScreen(
                     Box(
                         modifier = Modifier
                             .size(64.dp)
-                            .background(Color(0xFFFFA726), CircleShape)
+                            .background(MaterialTheme.colorScheme.tertiary, CircleShape)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
@@ -571,7 +570,7 @@ fun RecorderScreen(
                     Box(
                         modifier = Modifier
                             .size(64.dp)
-                            .background(Color(0xFFE57373), CircleShape)
+                            .background(MaterialTheme.colorScheme.error, CircleShape)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
@@ -626,7 +625,7 @@ fun RecorderScreen(
                     Box(
                         modifier = Modifier
                             .size(64.dp)
-                            .background(Color(0xFFFF3B30), CircleShape)
+                            .background(Color(0xFFDC143C), CircleShape)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
@@ -681,7 +680,7 @@ fun RecorderScreen(
                             modelDownloadVm.setSelectedModel(fallbackOption)
                         }
                     }) {
-                        Text("Delete", color = Color(0xFFE57373))
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
                     }
                 },
                 dismissButton = {
@@ -700,3 +699,5 @@ fun RecorderScreen(
         }
     }
 }
+
+

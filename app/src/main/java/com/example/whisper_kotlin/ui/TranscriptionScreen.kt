@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,8 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
+import androidx.compose.material.Card
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.LinearProgressIndicator
@@ -43,12 +46,8 @@ import androidx.compose.ui.platform.LocalContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-// Project symbols used below
-// Not strictly required if in the same package, but safe to keep explicit
-// import com.example.whisper_kotlin.ModelManager
-// import com.example.whisper_kotlin.WhisperEngine
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.material3.MaterialTheme
 
 
 
@@ -73,17 +72,19 @@ fun ActionButton(label: String, color: Color, enabled: Boolean = true, onClick: 
 @Composable
 fun TranscriptionScreen(
     modifier: Modifier = Modifier,
-    textColor: Color = Color(0xFF0D47A1),
+    textColor: Color,
     viewModel: TranscriptionViewModel = viewModel(),
     onOpenTranscription: (Long) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var pendingDelete by remember { mutableStateOf<SavedTranscription?>(null) }
+    val isDark = isSystemInDarkTheme()
+    val cardBackground = MaterialTheme.colorScheme.surfaceContainer
+    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
+    
     Column(modifier = modifier) {
-        val dialogBackground = remember(textColor) {
-            if (textColor.luminance() > 0.5f) Color(0xFF1E1E1E) else Color.White
-        }
+        val dialogBackground = MaterialTheme.colorScheme.surface
         val progress = uiState.progress
         val statusMessage = uiState.statusMessage
 
@@ -140,59 +141,65 @@ fun TranscriptionScreen(
                             ?.let { if (entry.transcript.length > 160) "$it…" else it }
                             ?: "Tap to view transcript"
                     }
-                    Column(
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, textColor.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = ripple(color = textColor.copy(alpha = 0.2f))
-                            ) { onOpenTranscription(entry.id) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            ) { onOpenTranscription(entry.id) },
+                        shape = RoundedCornerShape(12.dp),
+                        elevation = 0.dp,
+                        backgroundColor = cardBackground,
+                        border = BorderStroke(1.dp, cardBorderColor)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f, fill = true)) {
-                                BasicText(
-                                    text = entry.fileLabel,
-                                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                BasicText(
-                                    text = "Model: ${entry.modelLabel}",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.7f))
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                BasicText(
-                                    text = "$timestamp",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                BasicText(
-                                    text = "Transcription time: $durationLabel",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    pendingDelete = entry
-                                }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Delete,
-                                    contentDescription = "Delete transcription",
-                                    tint = textColor.copy(alpha = 0.85f)
-                                )
+                                Column(modifier = Modifier.weight(1f, fill = true)) {
+                                    BasicText(
+                                        text = entry.fileLabel,
+                                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    BasicText(
+                                        text = "Model: ${entry.modelLabel}",
+                                        style = TextStyle(color = textColor.copy(alpha = 0.7f))
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    BasicText(
+                                        text = "$timestamp",
+                                        style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    BasicText(
+                                        text = "Transcription time: $durationLabel",
+                                        style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        pendingDelete = entry
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = "Delete transcription",
+                                        tint = textColor.copy(alpha = 0.85f)
+                                    )
+                                }
                             }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            BasicText(
+                                text = summary,
+                                style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                            )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        BasicText(
-                            text = summary,
-                            style = TextStyle(color = textColor.copy(alpha = 0.75f))
-                        )
                     }
                 }
             }
@@ -222,7 +229,7 @@ fun TranscriptionScreen(
                         viewModel.deleteTranscription(context, entryToDelete.id)
                         pendingDelete = null
                     }) {
-                        Text("Delete", color = Color(0xFFE57373))
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
                     }
                 },
                 dismissButton = {

@@ -2,9 +2,9 @@ package com.example.whisper_kotlin
 
 import android.media.MediaPlayer
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.material3.MaterialTheme
 import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.ModelManager
 import com.example.whisper_kotlin.ModelOption
@@ -91,10 +92,8 @@ fun TranscriptionDetailScreen(
     var showTimestamps by remember(currentEntry.id) { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val isDark = isSystemInDarkTheme()
-    val selectorButtonBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE8EAF6)
-    val dialogBackground = remember(textColor) {
-        if (textColor.luminance() > 0.5f) Color(0xFF1E1E1E) else Color.White
-    }
+    val selectorButtonBg = MaterialTheme.colorScheme.surfaceVariant
+    val dialogBackground = MaterialTheme.colorScheme.surface
     val modelDownloadViewModel: ModelDownloadViewModel = viewModel()
     val modelDownloadState by modelDownloadViewModel.uiState.collectAsState()
     var showReTranscribeDialog by remember { mutableStateOf(false) }
@@ -191,8 +190,8 @@ fun TranscriptionDetailScreen(
     }
 
     // Define card colors - slightly different from background
-    val cardBackground = if (isDark) Color(0xFF2A2A2A) else Color(0xFFF5F5F5)
-    val cardBorderColor = if (isDark) Color(0xFF3A3A3A) else Color(0xFFE0E0E0)
+    val cardBackground = MaterialTheme.colorScheme.surfaceContainer
+    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
     val cornerRadius = 12.dp
     
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -207,12 +206,11 @@ fun TranscriptionDetailScreen(
         ) {
             // Card 1: Metadata and action buttons
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, cardBorderColor, RoundedCornerShape(cornerRadius)),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(cornerRadius),
                 backgroundColor = cardBackground,
-                elevation = 4.dp
+                elevation = 4.dp,
+                border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -302,12 +300,11 @@ fun TranscriptionDetailScreen(
 
             // Card 2: Audio seekbar
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, cardBorderColor, RoundedCornerShape(cornerRadius)),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(cornerRadius),
                 backgroundColor = cardBackground,
-                elevation = 4.dp
+                elevation = 4.dp,
+                border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -375,12 +372,11 @@ fun TranscriptionDetailScreen(
 
             // Card 3: Transcript text
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, cardBorderColor, RoundedCornerShape(cornerRadius)),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(cornerRadius),
                 backgroundColor = cardBackground,
-                elevation = 4.dp
+                elevation = 4.dp,
+                border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -432,7 +428,7 @@ fun TranscriptionDetailScreen(
         // Floating Action Button for Delete
         androidx.compose.material.FloatingActionButton(
             onClick = { showDeleteDialog = true },
-            backgroundColor = Color(0xFFE57373),
+            backgroundColor = MaterialTheme.colorScheme.error,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
@@ -440,7 +436,7 @@ fun TranscriptionDetailScreen(
             Icon(
                 imageVector = Icons.Filled.Delete,
                 contentDescription = "Delete transcription",
-                tint = Color.White
+                tint = MaterialTheme.colorScheme.onError
             )
         }
     }
@@ -463,7 +459,7 @@ fun TranscriptionDetailScreen(
                     showDeleteDialog = false
                     onDelete()
                 }) {
-                    Text("Delete", color = Color(0xFFE57373))
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
