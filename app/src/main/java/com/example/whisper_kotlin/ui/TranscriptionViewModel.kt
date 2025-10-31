@@ -25,7 +25,9 @@ data class TranscriptionUiState(
     val isTranscribing: Boolean = false,
     val statusMessage: String? = null,
     val progress: Float? = null,
-    val savedTranscriptions: List<SavedTranscription> = emptyList()
+    val savedTranscriptions: List<SavedTranscription> = emptyList(),
+    val folders: List<Folder> = emptyList(),
+    val currentFolderId: Long? = null
 )
 
 @Serializable
@@ -37,7 +39,16 @@ data class SavedTranscription(
     val timestampedTranscript: String? = null,
     val timestamp: Long,
     val audioPath: String? = null,
-    val transcriptionDurationMs: Long = 0L
+    val transcriptionDurationMs: Long = 0L,
+    // Optional folder containment; null means it appears at the root level
+    val folderId: Long? = null
+)
+
+@Serializable
+data class Folder(
+    val id: Long,
+    val name: String,
+    val parentId: Long? = null
 )
 
 class TranscriptionViewModel(
@@ -47,6 +58,7 @@ class TranscriptionViewModel(
     private val _uiState = MutableStateFlow(TranscriptionUiState())
     val uiState: StateFlow<TranscriptionUiState> = _uiState.asStateFlow()
     private val idCounter = AtomicLong(0L)
+    private val folderIdCounter = AtomicLong(0L)
 
     init {
         viewModelScope.launch(ioDispatcher) {
@@ -54,7 +66,17 @@ class TranscriptionViewModel(
             val ordered = persisted.sortedByDescending { it.timestamp }
             val maxId = ordered.maxOfOrNull { it.id } ?: 0L
             idCounter.set(maxId)
-            _uiState.update { current -> current.copy(savedTranscriptions = ordered) }
+
+            val loadedFolders = TranscriptionRepository.loadFolders()
+            val maxFolderId = loadedFolders.maxOfOrNull { it.id } ?: 0L
+            folderIdCounter.set(maxFolderId)
+
+            _uiState.update { current ->
+                current.copy(
+                    savedTranscriptions = ordered,
+                    folders = loadedFolders
+                )
+            }
         }
     }
 
@@ -74,6 +96,29 @@ class TranscriptionViewModel(
             current.copy(savedTranscriptions = next)
         }
         TranscriptionRepository.persist(updated)
+    }
+
+    fun navigateToFolder(folderId: Long?) {
+        _uiState.update { it.copy(currentFolderId = folderId) }
+    }
+
+    fun createFolder(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch(ioDispatcher) {
+            var updated: List<Folder> = emptyList()
+            _uiState.update { current ->
+                val newFolder = Folder(
+                    id = folderIdCounter.incrementAndGet(),
+                    name = trimmed,
+                    parentId = current.currentFolderId
+                )
+                val next = current.folders + newFolder
+                updated = next
+                current.copy(folders = next)
+            }
+            TranscriptionRepository.persistFolders(updated)
+        }
     }
 
     private suspend fun persistAudioFile(context: Context, audioSource: AudioSource): String? {
@@ -172,7 +217,8 @@ class TranscriptionViewModel(
         selectedModel: ModelOption?,
         audioSource: AudioSource,
         isModelDownloading: Boolean,
-        transcriptionName: String? = null
+        transcriptionName: String? = null,
+        targetFolderId: Long? = null
     ) {
         val appContext = context.applicationContext
         if (isModelDownloading) {
@@ -219,7 +265,8 @@ class TranscriptionViewModel(
                     timestampedTranscript = result.timestampedTranscript,
                     timestamp = System.currentTimeMillis(),
                     audioPath = audioPath,
-                    transcriptionDurationMs = result.elapsedMs
+                    transcriptionDurationMs = result.elapsedMs,
+                    folderId = targetFolderId
                 )
                 saveTranscriptionEntry(entry)
                 _uiState.update { it.copy(statusMessage = "Transcription saved: $fileLabel") }
@@ -375,6 +422,16 @@ class TranscriptionViewModel(
 
     fun getTranscription(entryId: Long): SavedTranscription? {
         return _uiState.value.savedTranscriptions.firstOrNull { it.id == entryId }
+    }
+
+    fun listFoldersInCurrent(): List<Folder> {
+        val state = _uiState.value
+        return state.folders.filter { it.parentId == state.currentFolderId }.sortedBy { it.name.lowercase() }
+    }
+
+    fun listTranscriptionsInCurrent(): List<SavedTranscription> {
+        val state = _uiState.value
+        return state.savedTranscriptions.filter { it.folderId == state.currentFolderId }
     }
 
     fun deleteModel(context: Context, selectedModel: ModelOption?) {

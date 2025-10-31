@@ -2,6 +2,7 @@ package com.example.whisper_kotlin.data
 
 import android.content.Context
 import com.example.whisper_kotlin.SavedTranscription
+import com.example.whisper_kotlin.Folder
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.decodeFromString
@@ -44,6 +45,25 @@ object TranscriptionRepository {
         return File(storageDir(context), "audio").apply { mkdirs() }
     }
 
+    suspend fun loadFolders(): List<Folder> = mutex.withLock {
+        val context = appContext ?: return emptyList()
+        val file = foldersFile(context)
+        if (!file.exists() || file.length() == 0L) {
+            emptyList()
+        } else {
+            runCatching { json.decodeFromString<List<Folder>>(file.readText()) }
+                .getOrElse { emptyList() }
+        }
+    }
+
+    suspend fun persistFolders(folders: List<Folder>) = mutex.withLock {
+        val context = appContext ?: return@withLock
+        val file = foldersFile(context)
+        file.parentFile?.mkdirs()
+        file.writeText(json.encodeToString(folders))
+    }
+
     private fun storageDir(context: Context): File = File(context.filesDir, "transcriptions").apply { mkdirs() }
     private fun storageFile(context: Context): File = File(storageDir(context), "transcriptions.json")
+    private fun foldersFile(context: Context): File = File(storageDir(context), "folders.json")
 }

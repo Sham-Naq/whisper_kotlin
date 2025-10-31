@@ -59,6 +59,7 @@ import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.TranscriptionViewModel
 import com.example.whisper_kotlin.FileSelectorRow
 import com.example.whisper_kotlin.ModelManager
+import com.example.whisper_kotlin.FolderSelectorRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -106,8 +107,10 @@ fun RecorderScreen(
     var playbackProgress by rememberSaveable { mutableStateOf(0f) }
     var playbackPositionMs by rememberSaveable { mutableStateOf(0) }
     var playbackDurationMs by rememberSaveable { mutableStateOf(0) }
+    var selectedFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     val transcriptionUi by transcriptionViewModel.uiState.collectAsState()
+    val allFolders = transcriptionUi.folders
     val bars by recorder.bars.collectAsState()
 
     val cacheDir = context.cacheDir
@@ -385,6 +388,18 @@ fun RecorderScreen(
             }
         )
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Target folder selection
+        FolderSelectorRow(
+            textColor = textColor,
+            isDark = isDark,
+            buttonBg = selectorButtonBg,
+            folders = allFolders,
+            selectedFolderId = selectedFolderId,
+            onFolderSelected = { selectedFolderId = it }
+        )
+
         if (isRecording) {
             Spacer(modifier = Modifier.height(8.dp))
             LineBarWaveform(
@@ -506,7 +521,8 @@ fun RecorderScreen(
                     selectedModel = modelToUse,
                     audioSource = source,
                     isModelDownloading = isModelDownloading,
-                    transcriptionName = transcriptionName
+                    transcriptionName = transcriptionName,
+                    targetFolderId = selectedFolderId
                 )
             }
 

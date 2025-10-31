@@ -1,5 +1,6 @@
 package com.example.whisper_kotlin
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.LinearProgressIndicator
 import androidx.compose.material.Text
+import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.TextButton
@@ -82,11 +84,19 @@ fun TranscriptionScreen(
     val isDark = isSystemInDarkTheme()
     val cardBackground = MaterialTheme.colorScheme.surfaceContainer
     val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
+    var showAddFolderDialog by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
     
     Column(modifier = modifier) {
         val dialogBackground = MaterialTheme.colorScheme.surface
         val progress = uiState.progress
         val statusMessage = uiState.statusMessage
+
+        // Enable Android back button to navigate up the folder hierarchy when inside a folder
+        BackHandler(enabled = uiState.currentFolderId != null) {
+            val parentId = uiState.folders.firstOrNull { it.id == uiState.currentFolderId }?.parentId
+            viewModel.navigateToFolder(parentId)
+        }
 
         if (uiState.isTranscribing) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -110,9 +120,29 @@ fun TranscriptionScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        val saved = uiState.savedTranscriptions
+        val showBack = uiState.currentFolderId != null
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ActionButton(label = "Add new folder", color = textColor) {
+                newFolderName = ""
+                showAddFolderDialog = true
+            }
+            if (showBack) {
+                ActionButton(label = "Up one level", color = textColor) {
+                    val parentId = uiState.folders.firstOrNull { it.id == uiState.currentFolderId }?.parentId
+                    viewModel.navigateToFolder(parentId)
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
-        if (saved.isEmpty()) {
+
+        val folders = viewModel.listFoldersInCurrent()
+        val saved = viewModel.listTranscriptionsInCurrent()
+        Spacer(modifier = Modifier.height(8.dp))
+        if (folders.isEmpty() && saved.isEmpty()) {
             BasicText(
                 text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
                 style = TextStyle(color = textColor.copy(alpha = 0.8f))
@@ -122,7 +152,49 @@ fun TranscriptionScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(saved, key = { it.id }) { entry ->
+                // Folders first (use distinct key namespace to avoid collisions with transcription IDs)
+                items(folders, key = { folder -> "folder_" + folder.id }) { folder ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(color = textColor.copy(alpha = 0.2f))
+                            ) {
+                                viewModel.navigateToFolder(folder.id)
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        elevation = 0.dp,
+                        backgroundColor = cardBackground,
+                        border = BorderStroke(1.dp, cardBorderColor)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f, fill = true)) {
+                                BasicText(
+                                    text = folder.name,
+                                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                BasicText(
+                                    text = "Folder",
+                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                                )
+                            }
+                            // Simple chevron indicator (using ">>")
+                            BasicText(
+                                text = ">",
+                                style = TextStyle(color = textColor.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                }
+
+                // Then transcriptions (separate key namespace)
+                items(saved, key = { entry -> "t_" + entry.id }) { entry ->
                     val timestamp = remember(entry.timestamp) {
                         SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(entry.timestamp))
                     }
@@ -236,6 +308,43 @@ fun TranscriptionScreen(
                     TextButton(onClick = { pendingDelete = null }) {
                         Text("Cancel")
                     }
+                }
+            )
+        }
+
+        if (showAddFolderDialog) {
+            AlertDialog(
+                onDismissRequest = { showAddFolderDialog = false },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = { Text(text = "New folder", color = textColor, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    Column {
+                        Text(
+                            text = "Enter a name for this folder.",
+                            color = textColor.copy(alpha = 0.85f)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = newFolderName,
+                            onValueChange = { newFolderName = it },
+                            singleLine = true
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val name = newFolderName.trim()
+                            if (name.isNotEmpty()) {
+                                viewModel.createFolder(name)
+                            }
+                            showAddFolderDialog = false
+                        }
+                    ) { Text("Create") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddFolderDialog = false }) { Text("Cancel") }
                 }
             )
         }
