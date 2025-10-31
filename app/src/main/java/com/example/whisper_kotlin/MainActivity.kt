@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.*
@@ -129,6 +130,120 @@ private val bottomTabOrder: List<BottomTab> = listOf(
     BottomTab.Settings
 )
 
+@Composable
+private fun BottomNavigationBar(
+    modifier: Modifier = Modifier,
+    backgroundColor: Color,
+    dividerColor: Color,
+    activeTab: BottomTab,
+    isViewingDetail: Boolean,
+    activeIconColor: Color,
+    inactiveIconColor: Color,
+    navSelectedBg: Color,
+    navUnselectedBg: Color,
+    onTabClick: (BottomTab) -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(backgroundColor)
+    ) {
+        // Divider line
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(dividerColor)
+        )
+
+        // Navigation icons row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Transcription tab
+            NavigationIcon(
+                tab = BottomTab.Transcription,
+                isSelected = activeTab == BottomTab.Transcription,
+                isViewingDetail = isViewingDetail,
+                activeIconColor = activeIconColor,
+                inactiveIconColor = inactiveIconColor,
+                onClick = { onTabClick(BottomTab.Transcription) }
+            )
+
+            // Recorder tab  
+            NavigationIcon(
+                tab = BottomTab.Recorder,
+                isSelected = activeTab == BottomTab.Recorder,
+                isViewingDetail = isViewingDetail,
+                activeIconColor = activeIconColor,
+                inactiveIconColor = inactiveIconColor,
+                onClick = { onTabClick(BottomTab.Recorder) }
+            )
+
+            // Settings tab
+            NavigationIcon(
+                tab = BottomTab.Settings,
+                isSelected = activeTab == BottomTab.Settings,
+                isViewingDetail = isViewingDetail,
+                activeIconColor = activeIconColor,
+                inactiveIconColor = inactiveIconColor,
+                onClick = { onTabClick(BottomTab.Settings) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun NavigationIcon(
+    tab: BottomTab,
+    isSelected: Boolean,
+    isViewingDetail: Boolean,
+    activeIconColor: Color,
+    inactiveIconColor: Color,
+    onClick: () -> Unit
+) {
+    val icon = when (tab) {
+        BottomTab.Transcription -> Icons.Filled.Folder
+        BottomTab.Recorder -> Icons.Filled.Mic
+        BottomTab.Settings -> Icons.Filled.Settings
+    }
+    
+    val shouldAnimate = (tab == BottomTab.Transcription || tab == BottomTab.Settings) && isSelected
+    val scale by animateFloatAsState(
+        targetValue = if (shouldAnimate) 1.12f else 1f, 
+        label = "navIconScale_${tab.route}"
+    )
+    
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = false, radius = 24.dp, color = Color.Gray.copy(alpha = 0.3f)),
+                onClick = { 
+                    if (!isSelected || isViewingDetail) {
+                        onClick()
+                    }
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = tab.header,
+            tint = if (isSelected) activeIconColor else inactiveIconColor,
+            modifier = Modifier
+                .size(42.dp)
+                .graphicsLayer(scaleX = scale, scaleY = scale)
+        )
+    }
+}
+
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 private fun HomeScreen() {
@@ -186,7 +301,13 @@ private fun HomeScreen() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(background).windowInsetsPadding(WindowInsets.systemBars)) {
+    Box(modifier = Modifier.fillMaxSize().background(background)) {
+        // Main content area with proper insets for status bar only
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -258,13 +379,13 @@ private fun HomeScreen() {
             )
         }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            // Main content area
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
                 AnimatedContent(
                     targetState = activeTab,
                     transitionSpec = {
@@ -374,115 +495,24 @@ private fun HomeScreen() {
             }
         }
 
-        Column(
+        // Bottom Navigation Bar - positioned at screen bottom with navigation bar insets
+        BottomNavigationBar(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(bottomBarBg)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(bottomBarDivider)
-            )
-
-            val highlightedTab = if (detailEntry != null) BottomTab.Transcription else activeTab
-            val isViewingDetail = detailEntry != null
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val isSelected = highlightedTab == BottomTab.Transcription
-                    val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleT")
-                    BottomNavItem(
-                        selected = isSelected,
-                        onClick = {
-                            detailEntryId = null
-                            activeTab = BottomTab.Transcription
-                        },
-                        modifier = Modifier,
-                        selectedBgColor = navSelectedBg,
-                        unselectedBgColor = navUnselectedBg,
-                        selectedBorderColor = Color.Transparent,
-                        unselectedBorderColor = Color.Transparent,
-                        drawContainer = false
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Folder,
-                            contentDescription = "Transcriptions",
-                            tint = if (isSelected) activeIconColor else inactiveIconColor,
-                            modifier = Modifier.size(42.dp).graphicsLayer(scaleX = scale, scaleY = scale)
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val isRecorder = highlightedTab == BottomTab.Recorder
-                    BottomNavItem(
-                        selected = isRecorder,
-                        onClick = {
-                            detailEntryId = null
-                            activeTab = BottomTab.Recorder
-                        },
-                        modifier = Modifier,
-                        selectedBgColor = navSelectedBg,
-                        unselectedBgColor = navUnselectedBg,
-                        selectedBorderColor = Color.Transparent,
-                        unselectedBorderColor = Color.Transparent,
-                        drawContainer = false
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Mic,
-                            contentDescription = "Recorder",
-                            tint = if (isRecorder) activeIconColor else inactiveIconColor,
-                            modifier = Modifier.size(42.dp)
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val isSelected = highlightedTab == BottomTab.Settings
-                    val scale by animateFloatAsState(targetValue = if (isSelected) 1.12f else 1f, label = "scaleS")
-                    BottomNavItem(
-                        selected = isSelected,
-                        onClick = {
-                            if (!isSelected || isViewingDetail) {
-                                detailEntryId = null
-                                activeTab = BottomTab.Settings
-                            }
-                        },
-                        modifier = Modifier,
-                        selectedBgColor = navSelectedBg,
-                        unselectedBgColor = navUnselectedBg,
-                        selectedBorderColor = Color.Transparent,
-                        unselectedBorderColor = Color.Transparent,
-                        drawContainer = false
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = "Settings",
-                            tint = if (isSelected) activeIconColor else inactiveIconColor,
-                            modifier = Modifier.size(42.dp).graphicsLayer(scaleX = scale, scaleY = scale)
-                        )
-                    }
-                }
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)),
+            backgroundColor = bottomBarBg,
+            dividerColor = bottomBarDivider,
+            activeTab = if (detailEntry != null) BottomTab.Transcription else activeTab,
+            isViewingDetail = detailEntry != null,
+            activeIconColor = activeIconColor,
+            inactiveIconColor = inactiveIconColor,
+            navSelectedBg = navSelectedBg,
+            navUnselectedBg = navUnselectedBg,
+            onTabClick = { tab ->
+                detailEntryId = null
+                activeTab = tab
             }
-        }
+        )
     }
 }
 
