@@ -94,6 +94,7 @@ fun RecorderScreen(
     var recorderPaused by rememberSaveable { mutableStateOf(false) }
     var rawFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var wavFilePath by rememberSaveable { mutableStateOf<String?>(null) }
+    var isRecordedAudio by rememberSaveable { mutableStateOf(false) } // Track if audio was recorded vs uploaded
 
     fun currentRawFile(): File? = rawFilePath?.let { File(it) }?.takeIf { it.exists() }
     fun currentWavFile(): File? = wavFilePath?.let { File(it) }?.takeIf { it.exists() }
@@ -124,6 +125,7 @@ fun RecorderScreen(
         releasePlayer()
         currentWavFile()?.delete()
         wavFilePath = null
+        isRecordedAudio = false
         currentRawFile()?.delete()
         val newRaw = File(cacheDir, "rec_${'$'}{System.currentTimeMillis()}.pcm")
         rawFilePath = newRaw.absolutePath
@@ -231,6 +233,7 @@ fun RecorderScreen(
                                 WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
                                 withContext(Dispatchers.Main) {
                                     wavFilePath = wf.absolutePath
+                                    isRecordedAudio = true // Mark as recorded audio
                                     onAudioSourceChanged(AudioSource.File(wf.absolutePath))
                                 }
                                 rf.delete()
@@ -238,6 +241,7 @@ fun RecorderScreen(
                             } else {
                                 withContext(Dispatchers.Main) {
                                     wavFilePath = null
+                                    isRecordedAudio = false
                                     rawFilePath = null
                                 }
                             }
@@ -262,8 +266,14 @@ fun RecorderScreen(
         val filePath = (audioSource as? AudioSource.File)?.path
         val normalized = filePath?.takeIf { File(it).exists() }
         if (normalized != wavFilePath) {
-            wavFilePath = normalized
-            if (normalized == null) {
+            // Only update wavFilePath if it's NOT from an uploaded file
+            // If audioSource changes to a different file, it means user uploaded a new file
+            // so we should clear the wavFilePath (recorded audio) and mark as not recorded
+            if (normalized != null && wavFilePath != normalized) {
+                // This is an uploaded file, not a recorded one
+                wavFilePath = null
+                isRecordedAudio = false
+            } else if (normalized == null) {
                 playbackProgress = 0f
                 playbackPositionMs = 0
                 playbackDurationMs = 0
@@ -278,7 +288,7 @@ fun RecorderScreen(
         return "%d:%02d".format(minutes, seconds)
     }
 
-    val canPlayRecording = currentWavFile() != null && mediaPlayer != null && playbackDurationMs > 0
+    val canPlayRecording = isRecordedAudio && currentWavFile() != null && mediaPlayer != null && playbackDurationMs > 0
     val canTranscribe = !isRecording && !transcriptionUi.isTranscribing && (!isModelDownloading)
 
     fun generateDefaultTranscriptionName(): String {
@@ -301,6 +311,14 @@ fun RecorderScreen(
         // Keep external selection in sync when coming back
         if (selectedModel != null && modelDownloadState.selectedModel?.id != selectedModel.id) {
             modelDownloadVm.selectIfPresent(context, selectedModel)
+        }
+    }
+
+    // Update parent's selectedModel when download completes
+    LaunchedEffect(modelDownloadState.selectedModel) {
+        val downloadedModel = modelDownloadState.selectedModel
+        if (downloadedModel != null && downloadedModel.id != selectedModel?.id) {
+            onSelectModel(downloadedModel)
         }
     }
 
@@ -481,9 +499,11 @@ fun RecorderScreen(
                 } else {
                     audioSource
                 }
+                // Use the downloaded model if available, otherwise fall back to selectedModel
+                val modelToUse = modelDownloadState.selectedModel ?: selectedModel
                 transcriptionViewModel.startTranscription(
                     context = context,
-                    selectedModel = selectedModel,
+                    selectedModel = modelToUse,
                     audioSource = source,
                     isModelDownloading = isModelDownloading,
                     transcriptionName = transcriptionName
@@ -501,6 +521,7 @@ fun RecorderScreen(
                     currentRawFile()?.delete()
                     wavFilePath = null
                     rawFilePath = null
+                    isRecordedAudio = false // Reset the flag when deleting recording
                     onAudioSourceChanged(AudioSource.Asset("samples/samples_jfk.wav"))
                 }
             }
@@ -584,6 +605,7 @@ fun RecorderScreen(
                                             WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
                                             withContext(Dispatchers.Main) {
                                                 wavFilePath = wf.absolutePath
+                                                isRecordedAudio = true // Mark as recorded audio
                                                 onAudioSourceChanged(AudioSource.File(wf.absolutePath))
                                             }
                                             rf.delete()
@@ -591,6 +613,7 @@ fun RecorderScreen(
                                         } else {
                                             withContext(Dispatchers.Main) {
                                                 wavFilePath = null
+                                                isRecordedAudio = false
                                                 rawFilePath = null
                                             }
                                         }

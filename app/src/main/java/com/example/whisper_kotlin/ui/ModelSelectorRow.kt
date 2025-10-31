@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.ripple
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,29 +63,34 @@ fun ModelSelectorRow(
     // Anchor bounds in window coordinates for popup placement
     var anchorBounds by remember { mutableStateOf(Rect.Zero) }
 
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 0.dp, vertical = 0.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 0.dp, vertical = 0.dp)
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Select model button
-            Box(
+            // Title (not clickable, no outline)
+            BasicText(
+                text = "Select model",
+                style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+            )
+
+            // Current option chip (clickable, with outline and arrow)
+            Row(
                 modifier = Modifier
-                    .background(buttonBg, RoundedCornerShape(8.dp))
+                    .border(1.dp, textColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = ripple(color = Color.Gray.copy(alpha = 0.3f))
                     ) { expanded = !expanded }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                BasicText("Select model", style = TextStyle(color = textColor, fontWeight = FontWeight.Medium))
-            }
-            // Selected model label
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .onGloballyPositioned { coords ->
+                        anchorBounds = coords.boundsInWindow()
+                    },
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 BasicText(
                     text = when {
@@ -90,24 +98,28 @@ fun ModelSelectorRow(
                         selectedModel != null -> selectedModel.id
                         else -> localSelectedId
                     },
-                    style = TextStyle(color = textColor),
-                    modifier = Modifier.onGloballyPositioned { coords ->
-                        anchorBounds = coords.boundsInWindow()
-                    }
+                    style = TextStyle(color = textColor)
                 )
-                if (downloadingId != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(bounded = false, radius = 12.dp, color = Color.Gray.copy(alpha = 0.3f))
-                            ) { onCancelDownload() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CancelIcon(color = textColor)
-                    }
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Filled.ArrowDropDown,
+                    contentDescription = "Model options",
+                    tint = textColor
+                )
+            }
+
+            if (downloadingId != null) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(bounded = false, radius = 12.dp, color = Color.Gray.copy(alpha = 0.3f))
+                        ) { onCancelDownload() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    CancelIcon(color = textColor)
                 }
             }
         }

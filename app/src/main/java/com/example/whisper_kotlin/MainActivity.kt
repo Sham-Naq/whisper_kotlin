@@ -166,6 +166,8 @@ private fun HomeScreen() {
 
     val detailEntry = detailEntryId?.let { transcriptionViewModel.getTranscription(it) }
     val currentHeader = if (detailEntry != null) "Transcript" else activeTab.header
+    val context = LocalContext.current
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     BackHandler(enabled = detailEntry != null) {
         detailEntryId = null
@@ -215,6 +217,45 @@ private fun HomeScreen() {
                     style = TextStyle(color = primaryTextColor, fontWeight = FontWeight.Bold)
                 )
             }
+
+            // Delete button on the right when viewing a detail
+            if (detailEntry != null) {
+                IconButton(
+                    onClick = { showDeleteDialog = true },
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Delete transcription",
+                        tint = primaryTextColor
+                    )
+                }
+            }
+        }
+
+        // Confirm deletion dialog
+        if (showDeleteDialog && detailEntry != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                backgroundColor = MaterialTheme.colorScheme.surface,
+                contentColor = primaryTextColor,
+                title = { Text("Delete transcription?", color = primaryTextColor, fontWeight = FontWeight.SemiBold) },
+                text = { Text("This will permanently remove ${detailEntry.fileLabel}.", color = primaryTextColor.copy(alpha = 0.85f)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        transcriptionViewModel.deleteTranscription(context, detailEntry.id)
+                        showDeleteDialog = false
+                        detailEntryId = null
+                    }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
 
         Column(
@@ -356,6 +397,7 @@ private fun HomeScreen() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
+
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
@@ -478,7 +520,7 @@ private fun BottomNavItem(
                 ),
                 onClick = onClick
             )
-            .padding(vertical = 8.dp),
+            .padding(vertical = 0.dp),
         contentAlignment = Alignment.Center
     ) {
         content()

@@ -193,8 +193,6 @@ fun TranscriptionDetailScreen(
     val cardBackground = MaterialTheme.colorScheme.surfaceContainer
     val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
     val cornerRadius = 12.dp
-    
-    var showDeleteDialog by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -424,51 +422,9 @@ fun TranscriptionDetailScreen(
                 }
             }
         }
-        
-        // Floating Action Button for Delete
-        androidx.compose.material.FloatingActionButton(
-            onClick = { showDeleteDialog = true },
-            backgroundColor = MaterialTheme.colorScheme.error,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Delete,
-                contentDescription = "Delete transcription",
-                tint = MaterialTheme.colorScheme.onError
-            )
-        }
-    }
     
-    // Delete confirmation dialog
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            backgroundColor = dialogBackground,
-            contentColor = textColor,
-            title = { Text("Delete transcription?", color = textColor, fontWeight = FontWeight.SemiBold) },
-            text = {
-                Text(
-                    "This will remove ${currentEntry.fileLabel}. The audio and transcript will be deleted.",
-                    color = textColor.copy(alpha = 0.85f)
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    onDelete()
-                }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
     }
+
 
         if (showReTranscribeDialog) {
         AlertDialog(
