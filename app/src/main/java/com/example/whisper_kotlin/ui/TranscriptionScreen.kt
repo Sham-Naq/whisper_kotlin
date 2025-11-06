@@ -45,6 +45,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.material.Checkbox
+import androidx.compose.material.icons.filled.Delete
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -71,6 +75,7 @@ fun ActionButton(label: String, color: Color, enabled: Boolean = true, onClick: 
         BasicText(label, style = TextStyle(color = color, fontWeight = FontWeight.Medium))
     }
 }
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TranscriptionScreen(
     modifier: Modifier = Modifier,
@@ -86,16 +91,27 @@ fun TranscriptionScreen(
     val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
+    var showDeleteFolderDialog by remember { mutableStateOf(false) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedFolderIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var selectedTranscriptionIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showDeleteSelectionDialog by remember { mutableStateOf(false) }
     
     Column(modifier = modifier) {
         val dialogBackground = MaterialTheme.colorScheme.surface
         val progress = uiState.progress
         val statusMessage = uiState.statusMessage
 
-        // Enable Android back button to navigate up the folder hierarchy when inside a folder
-        BackHandler(enabled = uiState.currentFolderId != null) {
-            val parentId = uiState.folders.firstOrNull { it.id == uiState.currentFolderId }?.parentId
-            viewModel.navigateToFolder(parentId)
+        // Back: exit selection first; otherwise navigate up a folder when inside one
+        BackHandler(enabled = selectionMode || uiState.currentFolderId != null) {
+            if (selectionMode) {
+                selectionMode = false
+                selectedFolderIds = emptySet()
+                selectedTranscriptionIds = emptySet()
+            } else {
+                val parentId = uiState.folders.firstOrNull { it.id == uiState.currentFolderId }?.parentId
+                viewModel.navigateToFolder(parentId)
+            }
         }
 
         if (uiState.isTranscribing) {
@@ -120,20 +136,40 @@ fun TranscriptionScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        val showBack = uiState.currentFolderId != null
+        val showDeleteFolder = uiState.currentFolderId != null
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ActionButton(label = "Add new folder", color = textColor) {
-                newFolderName = ""
-                showAddFolderDialog = true
-            }
-            if (showBack) {
-                ActionButton(label = "Up one level", color = textColor) {
-                    val parentId = uiState.folders.firstOrNull { it.id == uiState.currentFolderId }?.parentId
-                    viewModel.navigateToFolder(parentId)
+            if (!selectionMode) {
+                ActionButton(label = "Add new folder", color = textColor) {
+                    newFolderName = ""
+                    showAddFolderDialog = true
+                }
+                if (showDeleteFolder) {
+                    ActionButton(label = "Delete folder", color = textColor) {
+                        showDeleteFolderDialog = true
+                    }
+                }
+            } else {
+                // Selection mode controls
+                ActionButton(label = "Cancel", color = textColor) {
+                    selectionMode = false
+                    selectedFolderIds = emptySet()
+                    selectedTranscriptionIds = emptySet()
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = {
+                    if (selectedFolderIds.isNotEmpty() || selectedTranscriptionIds.isNotEmpty()) {
+                        showDeleteSelectionDialog = true
+                    }
+                }) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Delete selected",
+                        tint = textColor
+                    )
                 }
             }
         }
@@ -154,19 +190,34 @@ fun TranscriptionScreen(
             ) {
                 // Folders first (use distinct key namespace to avoid collisions with transcription IDs)
                 items(folders, key = { folder -> "folder_" + folder.id }) { folder ->
+                    val folderIsSelected = selectionMode && selectedFolderIds.contains(folder.id)
+                    val folderBg = if (folderIsSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else cardBackground
+                    val folderBorder = if (folderIsSelected) MaterialTheme.colorScheme.primary else cardBorderColor
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(
+                            .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(color = textColor.copy(alpha = 0.2f))
-                            ) {
-                                viewModel.navigateToFolder(folder.id)
-                            },
+                                indication = ripple(color = textColor.copy(alpha = 0.2f)),
+                                onClick = {
+                                    if (selectionMode) {
+                                        selectedFolderIds = if (selectedFolderIds.contains(folder.id))
+                                            selectedFolderIds - folder.id else selectedFolderIds + folder.id
+                                    } else {
+                                        viewModel.navigateToFolder(folder.id)
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!selectionMode) {
+                                        selectionMode = true
+                                        selectedFolderIds = setOf(folder.id)
+                                    }
+                                }
+                            ),
                         shape = RoundedCornerShape(12.dp),
                         elevation = 0.dp,
-                        backgroundColor = cardBackground,
-                        border = BorderStroke(1.dp, cardBorderColor)
+                        backgroundColor = folderBg,
+                        border = BorderStroke(1.dp, folderBorder)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -184,11 +235,19 @@ fun TranscriptionScreen(
                                     style = TextStyle(color = textColor.copy(alpha = 0.6f))
                                 )
                             }
-                            // Simple chevron indicator (using ">>")
-                            BasicText(
-                                text = ">",
-                                style = TextStyle(color = textColor.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                            )
+                            if (selectionMode) {
+                                Checkbox(
+                                    checked = selectedFolderIds.contains(folder.id),
+                                    onCheckedChange = { checked ->
+                                        selectedFolderIds = if (checked) selectedFolderIds + folder.id else selectedFolderIds - folder.id
+                                    }
+                                )
+                            } else {
+                                BasicText(
+                                    text = ">",
+                                    style = TextStyle(color = textColor.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
+                                )
+                            }
                         }
                     }
                 }
@@ -213,17 +272,34 @@ fun TranscriptionScreen(
                             ?.let { if (entry.transcript.length > 160) "$it…" else it }
                             ?: "Tap to view transcript"
                     }
+                    val entryIsSelected = selectionMode && selectedTranscriptionIds.contains(entry.id)
+                    val entryBg = if (entryIsSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else cardBackground
+                    val entryBorder = if (entryIsSelected) MaterialTheme.colorScheme.primary else cardBorderColor
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(
+                            .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(color = textColor.copy(alpha = 0.2f))
-                            ) { onOpenTranscription(entry.id) },
+                                indication = ripple(color = textColor.copy(alpha = 0.2f)),
+                                onClick = {
+                                    if (selectionMode) {
+                                        selectedTranscriptionIds = if (selectedTranscriptionIds.contains(entry.id))
+                                            selectedTranscriptionIds - entry.id else selectedTranscriptionIds + entry.id
+                                    } else {
+                                        onOpenTranscription(entry.id)
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!selectionMode) {
+                                        selectionMode = true
+                                        selectedTranscriptionIds = setOf(entry.id)
+                                    }
+                                }
+                            ),
                         shape = RoundedCornerShape(12.dp),
                         elevation = 0.dp,
-                        backgroundColor = cardBackground,
-                        border = BorderStroke(1.dp, cardBorderColor)
+                        backgroundColor = entryBg,
+                        border = BorderStroke(1.dp, entryBorder)
                     ) {
                         Column(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
@@ -254,15 +330,12 @@ fun TranscriptionScreen(
                                         style = TextStyle(color = textColor.copy(alpha = 0.6f))
                                     )
                                 }
-                                IconButton(
-                                    onClick = {
-                                        pendingDelete = entry
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Delete,
-                                        contentDescription = "Delete transcription",
-                                        tint = textColor.copy(alpha = 0.85f)
+                                if (selectionMode) {
+                                    Checkbox(
+                                        checked = selectedTranscriptionIds.contains(entry.id),
+                                        onCheckedChange = { checked ->
+                                            selectedTranscriptionIds = if (checked) selectedTranscriptionIds + entry.id else selectedTranscriptionIds - entry.id
+                                        }
                                     )
                                 }
                             }
@@ -277,7 +350,8 @@ fun TranscriptionScreen(
             }
         }
 
-        val entryToDelete = pendingDelete
+    // Legacy per-item delete dialog retained if something still triggers it
+    val entryToDelete = pendingDelete
         if (entryToDelete != null) {
             AlertDialog(
                 onDismissRequest = { pendingDelete = null },
@@ -306,6 +380,44 @@ fun TranscriptionScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { pendingDelete = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // Folder delete dialog (separate from transcription delete)
+        if (showDeleteFolderDialog && uiState.currentFolderId != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteFolderDialog = false },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = {
+                    Text(
+                        text = "Delete folder?",
+                        color = textColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This will remove this folder and all of its subfolders and transcriptions.",
+                        color = textColor.copy(alpha = 0.85f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val id = uiState.currentFolderId
+                        if (id != null) {
+                            viewModel.deleteFolder(id)
+                        }
+                        showDeleteFolderDialog = false
+                    }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteFolderDialog = false }) {
                         Text("Cancel")
                     }
                 }
@@ -346,6 +458,37 @@ fun TranscriptionScreen(
                 dismissButton = {
                     TextButton(onClick = { showAddFolderDialog = false }) { Text("Cancel") }
                 }
+            )
+        }
+
+        // Selection delete dialog
+        if (showDeleteSelectionDialog) {
+            val foldersCount = selectedFolderIds.size
+            val transCount = selectedTranscriptionIds.size
+            AlertDialog(
+                onDismissRequest = { showDeleteSelectionDialog = false },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = { Text(text = "Delete selected?", color = textColor, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    Text(
+                        text = "This will delete $foldersCount folder(s) and $transCount transcription(s).",
+                        color = textColor.copy(alpha = 0.85f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        // Delete folders first (will also remove transcriptions within)
+                        selectedFolderIds.forEach { fid -> viewModel.deleteFolder(fid) }
+                        // Then delete any remaining specifically-selected transcriptions
+                        selectedTranscriptionIds.forEach { tid -> viewModel.deleteTranscription(context, tid) }
+                        selectionMode = false
+                        selectedFolderIds = emptySet()
+                        selectedTranscriptionIds = emptySet()
+                        showDeleteSelectionDialog = false
+                    }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { showDeleteSelectionDialog = false }) { Text("Cancel") } }
             )
         }
     }

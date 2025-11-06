@@ -434,6 +434,54 @@ class TranscriptionViewModel(
         return state.savedTranscriptions.filter { it.folderId == state.currentFolderId }
     }
 
+    private fun collectDescendantFolderIds(rootId: Long, folders: List<Folder>, acc: MutableSet<Long>) {
+        val children = folders.filter { it.parentId == rootId }
+        for (child in children) {
+            if (acc.add(child.id)) {
+                collectDescendantFolderIds(child.id, folders, acc)
+            }
+        }
+    }
+
+    fun deleteFolder(folderId: Long) {
+        viewModelScope.launch(ioDispatcher) {
+            var foldersToPersist: List<Folder> = emptyList()
+            var transToPersist: List<SavedTranscription> = emptyList()
+            _uiState.update { current ->
+                val target = current.folders.firstOrNull { it.id == folderId } ?: return@update current
+                val toDelete: MutableSet<Long> = mutableSetOf(folderId)
+                collectDescendantFolderIds(folderId, current.folders, toDelete)
+
+                // Delete audio files for any transcriptions inside the folders being deleted
+                current.savedTranscriptions.forEach { st ->
+                    if (st.folderId != null && toDelete.contains(st.folderId)) {
+                        runCatching { st.audioPath?.let { java.io.File(it).takeIf { f -> f.exists() }?.delete() } }
+                    }
+                }
+
+                val remainingFolders = current.folders.filterNot { it.id in toDelete }
+                val remainingTrans = current.savedTranscriptions.filterNot { st -> st.folderId != null && toDelete.contains(st.folderId) }
+
+                foldersToPersist = remainingFolders
+                transToPersist = remainingTrans
+
+                current.copy(
+                    folders = remainingFolders,
+                    savedTranscriptions = remainingTrans,
+                    currentFolderId = target.parentId
+                )
+            }
+            if (foldersToPersist.isNotEmpty() || transToPersist.isNotEmpty()) {
+                TranscriptionRepository.persistFolders(foldersToPersist)
+                TranscriptionRepository.persist(transToPersist)
+            } else {
+                // Still persist empties if everything was removed to keep files in sync
+                TranscriptionRepository.persistFolders(foldersToPersist)
+                TranscriptionRepository.persist(transToPersist)
+            }
+        }
+    }
+
     fun deleteModel(context: Context, selectedModel: ModelOption?) {
         val appContext = context.applicationContext
         if (selectedModel == null) {
