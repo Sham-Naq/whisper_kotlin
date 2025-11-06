@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.animateFloatAsState
@@ -113,6 +114,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class BottomTab(val route: String, val header: String) {
+    Recents(route = "recents", header = "Recents"),
     Transcription(route = "transcription", header = "Transcription"),
     Recorder(route = "recorder", header = "Recorder"),
     Settings(route = "settings", header = "Settings")
@@ -125,6 +127,7 @@ enum class ThemePreference {
 }
 
 private val bottomTabOrder: List<BottomTab> = listOf(
+    BottomTab.Recents,
     BottomTab.Transcription,
     BottomTab.Recorder,
     BottomTab.Settings
@@ -156,7 +159,7 @@ private fun BottomNavigationBar(
                 .background(dividerColor)
         )
 
-        // Navigation icons row
+    // Navigation icons row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -165,6 +168,16 @@ private fun BottomNavigationBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Recents tab (left-most)
+            NavigationIcon(
+                tab = BottomTab.Recents,
+                isSelected = activeTab == BottomTab.Recents,
+                isViewingDetail = isViewingDetail,
+                activeIconColor = activeIconColor,
+                inactiveIconColor = inactiveIconColor,
+                onClick = { onTabClick(BottomTab.Recents) }
+            )
+
             // Transcription tab
             NavigationIcon(
                 tab = BottomTab.Transcription,
@@ -208,6 +221,7 @@ private fun NavigationIcon(
     onClick: () -> Unit
 ) {
     val icon = when (tab) {
+        BottomTab.Recents -> Icons.Filled.AccessTime
         BottomTab.Transcription -> Icons.Filled.Folder
         BottomTab.Recorder -> Icons.Filled.Mic
         BottomTab.Settings -> Icons.Filled.Settings
@@ -404,11 +418,23 @@ private fun HomeScreen() {
                     label = "tabAnimation"
                 ) { tab ->
                     when (tab) {
+                        BottomTab.Recents -> {
+                            RecentsScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                textColor = primaryTextColor,
+                                viewModel = transcriptionViewModel,
+                                onOpenTranscription = { id ->
+                                    // Stay on Recents; just show the detail overlay
+                                    detailEntryId = id
+                                }
+                            )
+                        }
                         BottomTab.Transcription -> {
                             TranscriptionScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 textColor = primaryTextColor,
                                 viewModel = transcriptionViewModel,
+                                isDetailVisible = detailEntry != null,
                                 onOpenTranscription = { id ->
                                     activeTab = BottomTab.Transcription
                                     detailEntryId = id

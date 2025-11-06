@@ -81,6 +81,7 @@ fun TranscriptionScreen(
     modifier: Modifier = Modifier,
     textColor: Color,
     viewModel: TranscriptionViewModel = viewModel(),
+    isDetailVisible: Boolean = false,
     onOpenTranscription: (Long) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -102,8 +103,9 @@ fun TranscriptionScreen(
         val progress = uiState.progress
         val statusMessage = uiState.statusMessage
 
-        // Back: exit selection first; otherwise navigate up a folder when inside one
-        BackHandler(enabled = selectionMode || uiState.currentFolderId != null) {
+        // Back: if a detail overlay is visible, let the parent handle it; otherwise
+        // exit selection first; else navigate up a folder when inside one
+        BackHandler(enabled = (selectionMode || uiState.currentFolderId != null) && !isDetailVisible) {
             if (selectionMode) {
                 selectionMode = false
                 selectedFolderIds = emptySet()
