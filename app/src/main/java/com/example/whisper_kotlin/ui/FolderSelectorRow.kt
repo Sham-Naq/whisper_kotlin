@@ -55,18 +55,11 @@ fun FolderSelectorRow(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Title chip (non-clickable)
-            Box(
-                modifier = Modifier
-                    .background(buttonBg, shape)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                BasicText(
-                    text = "Folder",
-                    style = TextStyle(color = textColor, fontWeight = FontWeight.Medium)
-                )
-            }
+            // Title (plain text, not highlighted) – consistent with Select model/file
+            BasicText(
+                text = "Select folder",
+                style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+            )
 
             // Current selection chip (clickable)
             Box(

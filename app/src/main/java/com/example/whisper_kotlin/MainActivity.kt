@@ -83,7 +83,10 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.ui.graphics.luminance
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlin.math.abs
 import com.example.compose.AppTheme
 import androidx.compose.material3.MaterialTheme
 
@@ -227,7 +230,8 @@ private fun NavigationIcon(
         BottomTab.Settings -> Icons.Filled.Settings
     }
     
-    val shouldAnimate = (tab == BottomTab.Transcription || tab == BottomTab.Settings) && isSelected
+    // Animate all tabs slightly when selected to keep interaction consistent
+    val shouldAnimate = isSelected
     val scale by animateFloatAsState(
         targetValue = if (shouldAnimate) 1.12f else 1f, 
         label = "navIconScale_${tab.route}"
@@ -258,7 +262,7 @@ private fun NavigationIcon(
     }
 }
 
-@OptIn(ExperimentalAnimationApi::class)
+@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterialApi::class)
 @Composable
 private fun HomeScreen() {
     var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
@@ -394,11 +398,42 @@ private fun HomeScreen() {
         }
 
             // Main content area
+            // Swipe left/right across content to navigate between tabs (disabled while viewing a detail)
+            val density = LocalDensity.current
+            val swipeThresholdPx = with(density) { 64.dp.toPx() }
+            var cumulativeDragX by remember { mutableStateOf(0f) }
+
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(16.dp)
+                    .let { base ->
+                        if (detailEntry == null) {
+                            base.pointerInput(activeTab) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = { cumulativeDragX = 0f },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        cumulativeDragX += dragAmount
+                                    },
+                                    onDragEnd = {
+                                        if (abs(cumulativeDragX) >= swipeThresholdPx) {
+                                            val currentIndex = bottomTabOrder.indexOf(activeTab).coerceAtLeast(0)
+                                            val target = if (cumulativeDragX > 0f) {
+                                                bottomTabOrder.getOrNull(currentIndex - 1)
+                                            } else {
+                                                bottomTabOrder.getOrNull(currentIndex + 1)
+                                            }
+                                            if (target != null) {
+                                                detailEntryId = null
+                                                activeTab = target
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        } else base
+                    }
             ) {
                 AnimatedContent(
                     targetState = activeTab,
