@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,6 +50,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material.Checkbox
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.FloatingActionButton
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -92,104 +95,95 @@ fun TranscriptionScreen(
     val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
-    var showDeleteFolderDialog by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedFolderIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var selectedTranscriptionIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelectionDialog by remember { mutableStateOf(false) }
     
-    Column(modifier = modifier) {
-        val dialogBackground = MaterialTheme.colorScheme.surface
-        val progress = uiState.progress
-        val statusMessage = uiState.statusMessage
+    Box(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            val dialogBackground = MaterialTheme.colorScheme.surface
+            val progress = uiState.progress
+            val statusMessage = uiState.statusMessage
 
-        // Back: if a detail overlay is visible, let the parent handle it; otherwise
-        // exit selection first; else navigate up a folder when inside one
-        BackHandler(enabled = (selectionMode || uiState.currentFolderId != null) && !isDetailVisible) {
-            if (selectionMode) {
-                selectionMode = false
-                selectedFolderIds = emptySet()
-                selectedTranscriptionIds = emptySet()
-            } else {
-                val parentId = uiState.folders.firstOrNull { it.id == uiState.currentFolderId }?.parentId
-                viewModel.navigateToFolder(parentId)
-            }
-        }
-
-        if (uiState.isTranscribing) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                progress?.let {
-                    LinearProgressIndicator(progress = it, modifier = Modifier.fillMaxWidth())
-                } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Spacer(modifier = Modifier.height(6.dp))
-                BasicText(
-                    text = statusMessage ?: "Transcribing…",
-                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-        } else if (statusMessage != null) {
-            Spacer(modifier = Modifier.height(4.dp))
-            BasicText(
-                text = statusMessage,
-                style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        val showDeleteFolder = uiState.currentFolderId != null
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (!selectionMode) {
-                ActionButton(label = "Add new folder", color = textColor) {
-                    newFolderName = ""
-                    showAddFolderDialog = true
-                }
-                if (showDeleteFolder) {
-                    ActionButton(label = "Delete folder", color = textColor) {
-                        showDeleteFolderDialog = true
-                    }
-                }
-            } else {
-                // Selection mode controls
-                ActionButton(label = "Cancel", color = textColor) {
+            // Back: if a detail overlay is visible, let the parent handle it; otherwise
+            // exit selection first; else navigate up a folder when inside one
+            BackHandler(enabled = (selectionMode || uiState.currentFolderId != null) && !isDetailVisible) {
+                if (selectionMode) {
                     selectionMode = false
                     selectedFolderIds = emptySet()
                     selectedTranscriptionIds = emptySet()
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = {
-                    if (selectedFolderIds.isNotEmpty() || selectedTranscriptionIds.isNotEmpty()) {
-                        showDeleteSelectionDialog = true
-                    }
-                }) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = "Delete selected",
-                        tint = textColor
-                    )
+                } else {
+                    val parentId = uiState.folders.firstOrNull { it.id == uiState.currentFolderId }?.parentId
+                    viewModel.navigateToFolder(parentId)
                 }
             }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
 
-        val folders = viewModel.listFoldersInCurrent()
-        val saved = viewModel.listTranscriptionsInCurrent()
-        Spacer(modifier = Modifier.height(8.dp))
-        if (folders.isEmpty() && saved.isEmpty()) {
-            BasicText(
-                text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
-                style = TextStyle(color = textColor.copy(alpha = 0.8f))
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            if (uiState.isTranscribing) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    progress?.let {
+                        LinearProgressIndicator(progress = it, modifier = Modifier.fillMaxWidth())
+                    } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(6.dp))
+                    BasicText(
+                        text = statusMessage ?: "Transcribing…",
+                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            } else if (statusMessage != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                BasicText(
+                    text = statusMessage,
+                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Selection mode controls (only show cancel and delete when in selection mode)
+            if (selectionMode) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ActionButton(label = "Cancel", color = textColor) {
+                        selectionMode = false
+                        selectedFolderIds = emptySet()
+                        selectedTranscriptionIds = emptySet()
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        if (selectedFolderIds.isNotEmpty() || selectedTranscriptionIds.isNotEmpty()) {
+                            showDeleteSelectionDialog = true
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = "Delete selected",
+                            tint = textColor
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            val folders = viewModel.listFoldersInCurrent()
+            val saved = viewModel.listTranscriptionsInCurrent()
+            
+            if (folders.isEmpty() && saved.isEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                BasicText(
+                    text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
+                    style = TextStyle(color = textColor.copy(alpha = 0.8f))
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp)
+                ) {
                 // Folders first (use distinct key namespace to avoid collisions with transcription IDs)
                 items(folders, key = { folder -> "folder_" + folder.id }) { folder ->
                     val folderIsSelected = selectionMode && selectedFolderIds.contains(folder.id)
@@ -352,8 +346,8 @@ fun TranscriptionScreen(
             }
         }
 
-    // Legacy per-item delete dialog retained if something still triggers it
-    val entryToDelete = pendingDelete
+        // Legacy per-item delete dialog retained if something still triggers it
+        val entryToDelete = pendingDelete
         if (entryToDelete != null) {
             AlertDialog(
                 onDismissRequest = { pendingDelete = null },
@@ -382,44 +376,6 @@ fun TranscriptionScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { pendingDelete = null }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        // Folder delete dialog (separate from transcription delete)
-        if (showDeleteFolderDialog && uiState.currentFolderId != null) {
-            AlertDialog(
-                onDismissRequest = { showDeleteFolderDialog = false },
-                backgroundColor = dialogBackground,
-                contentColor = textColor,
-                title = {
-                    Text(
-                        text = "Delete folder?",
-                        color = textColor,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                text = {
-                    Text(
-                        text = "This will remove this folder and all of its subfolders and transcriptions.",
-                        color = textColor.copy(alpha = 0.85f)
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val id = uiState.currentFolderId
-                        if (id != null) {
-                            viewModel.deleteFolder(id)
-                        }
-                        showDeleteFolderDialog = false
-                    }) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteFolderDialog = false }) {
                         Text("Cancel")
                     }
                 }
@@ -494,4 +450,25 @@ fun TranscriptionScreen(
             )
         }
     }
+    
+    // Floating Action Button for adding folders (hide in selection mode)
+    if (!selectionMode) {
+        FloatingActionButton(
+            onClick = {
+                newFolderName = ""
+                showAddFolderDialog = true
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            containerColor = MaterialTheme.colorScheme.primary
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = "Add new folder",
+                tint = MaterialTheme.colorScheme.onPrimary
+            )
+        }
+    }
+  }
 }

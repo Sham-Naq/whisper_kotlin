@@ -89,6 +89,12 @@ import androidx.core.view.WindowInsetsControllerCompat
 import kotlin.math.abs
 import com.example.compose.AppTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,133 +142,7 @@ private val bottomTabOrder: List<BottomTab> = listOf(
     BottomTab.Settings
 )
 
-@Composable
-private fun BottomNavigationBar(
-    modifier: Modifier = Modifier,
-    backgroundColor: Color,
-    dividerColor: Color,
-    activeTab: BottomTab,
-    isViewingDetail: Boolean,
-    activeIconColor: Color,
-    inactiveIconColor: Color,
-    navSelectedBg: Color,
-    navUnselectedBg: Color,
-    onTabClick: (BottomTab) -> Unit
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(backgroundColor)
-    ) {
-        // Divider line
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(dividerColor)
-        )
-
-    // Navigation icons row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Recents tab (left-most)
-            NavigationIcon(
-                tab = BottomTab.Recents,
-                isSelected = activeTab == BottomTab.Recents,
-                isViewingDetail = isViewingDetail,
-                activeIconColor = activeIconColor,
-                inactiveIconColor = inactiveIconColor,
-                onClick = { onTabClick(BottomTab.Recents) }
-            )
-
-            // Transcription tab
-            NavigationIcon(
-                tab = BottomTab.Transcription,
-                isSelected = activeTab == BottomTab.Transcription,
-                isViewingDetail = isViewingDetail,
-                activeIconColor = activeIconColor,
-                inactiveIconColor = inactiveIconColor,
-                onClick = { onTabClick(BottomTab.Transcription) }
-            )
-
-            // Recorder tab  
-            NavigationIcon(
-                tab = BottomTab.Recorder,
-                isSelected = activeTab == BottomTab.Recorder,
-                isViewingDetail = isViewingDetail,
-                activeIconColor = activeIconColor,
-                inactiveIconColor = inactiveIconColor,
-                onClick = { onTabClick(BottomTab.Recorder) }
-            )
-
-            // Settings tab
-            NavigationIcon(
-                tab = BottomTab.Settings,
-                isSelected = activeTab == BottomTab.Settings,
-                isViewingDetail = isViewingDetail,
-                activeIconColor = activeIconColor,
-                inactiveIconColor = inactiveIconColor,
-                onClick = { onTabClick(BottomTab.Settings) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun NavigationIcon(
-    tab: BottomTab,
-    isSelected: Boolean,
-    isViewingDetail: Boolean,
-    activeIconColor: Color,
-    inactiveIconColor: Color,
-    onClick: () -> Unit
-) {
-    val icon = when (tab) {
-        BottomTab.Recents -> Icons.Filled.AccessTime
-        BottomTab.Transcription -> Icons.Filled.Folder
-        BottomTab.Recorder -> Icons.Filled.Mic
-        BottomTab.Settings -> Icons.Filled.Settings
-    }
-    
-    // Animate all tabs slightly when selected to keep interaction consistent
-    val shouldAnimate = isSelected
-    val scale by animateFloatAsState(
-        targetValue = if (shouldAnimate) 1.12f else 1f, 
-        label = "navIconScale_${tab.route}"
-    )
-    
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(bounded = false, radius = 24.dp, color = Color.Gray.copy(alpha = 0.3f)),
-                onClick = { 
-                    if (!isSelected || isViewingDetail) {
-                        onClick()
-                    }
-                }
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = tab.header,
-            tint = if (isSelected) activeIconColor else inactiveIconColor,
-            modifier = Modifier
-                .size(42.dp)
-                .graphicsLayer(scaleX = scale, scaleY = scale)
-        )
-    }
-}
-
-@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterialApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen() {
     var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
@@ -276,15 +156,7 @@ private fun HomeScreen() {
         ThemePreference.Light -> false
         ThemePreference.Dark -> true
     }
-    val background = MaterialTheme.colorScheme.background
-    val headerBg = MaterialTheme.colorScheme.surface
     val primaryTextColor = MaterialTheme.colorScheme.onBackground
-    val bottomBarBg = MaterialTheme.colorScheme.surface
-    val bottomBarDivider = MaterialTheme.colorScheme.outlineVariant
-    val navSelectedBg = MaterialTheme.colorScheme.primaryContainer
-    val navUnselectedBg = MaterialTheme.colorScheme.surfaceVariant
-    val activeIconColor = MaterialTheme.colorScheme.primary
-    val inactiveIconColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     var recorderCommand by remember { mutableStateOf<com.example.whisper_kotlin.recorder.RecorderCommand?>(null) }
     var isRecording by remember { mutableStateOf(false) }
@@ -295,7 +167,6 @@ private fun HomeScreen() {
     var selectedModel by remember { mutableStateOf<ModelOption?>(null) }
     var audioSource by remember { mutableStateOf<AudioSource>(AudioSource.Asset("samples/samples_jfk.wav")) }
     var isModelDownloading by remember { mutableStateOf(false) }
-
 
     val detailEntry = detailEntryId?.let { transcriptionViewModel.getTranscription(it) }
     val currentHeader = if (detailEntry != null) "Transcript" else activeTab.header
@@ -319,261 +190,266 @@ private fun HomeScreen() {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(background)) {
-        // Main content area with proper insets for status bar only
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-        ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(headerBg)
-                .padding(vertical = 12.dp, horizontal = 16.dp)
-        ) {
-            // Back button (only visible when viewing detail)
-            if (detailEntry != null) {
-                IconButton(
-                    onClick = { detailEntryId = null },
-                    modifier = Modifier.align(Alignment.CenterStart)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = primaryTextColor
-                    )
+    // Confirm deletion dialog
+    if (showDeleteDialog && detailEntry != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            backgroundColor = MaterialTheme.colorScheme.surface,
+            contentColor = primaryTextColor,
+            title = { Text("Delete transcription?", color = primaryTextColor, fontWeight = FontWeight.SemiBold) },
+            text = { Text("This will permanently remove ${detailEntry.fileLabel}.", color = primaryTextColor.copy(alpha = 0.85f)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    transcriptionViewModel.deleteTranscription(context, detailEntry.id)
+                    showDeleteDialog = false
+                    detailEntryId = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
-            }
-            
-            // Centered title
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                BasicText(
-                    text = currentHeader,
-                    style = TextStyle(color = primaryTextColor, fontWeight = FontWeight.Bold)
-                )
-            }
-
-            // Delete button on the right when viewing a detail
-            if (detailEntry != null) {
-                IconButton(
-                    onClick = { showDeleteDialog = true },
-                    modifier = Modifier.align(Alignment.CenterEnd)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = "Delete transcription",
-                        tint = primaryTextColor
-                    )
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
                 }
-            }
-        }
-
-        // Confirm deletion dialog
-        if (showDeleteDialog && detailEntry != null) {
-            AlertDialog(
-                onDismissRequest = { showDeleteDialog = false },
-                backgroundColor = MaterialTheme.colorScheme.surface,
-                contentColor = primaryTextColor,
-                title = { Text("Delete transcription?", color = primaryTextColor, fontWeight = FontWeight.SemiBold) },
-                text = { Text("This will permanently remove ${detailEntry.fileLabel}.", color = primaryTextColor.copy(alpha = 0.85f)) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        transcriptionViewModel.deleteTranscription(context, detailEntry.id)
-                        showDeleteDialog = false
-                        detailEntryId = null
-                    }) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteDialog = false }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-            // Main content area
-            // Swipe left/right across content to navigate between tabs (disabled while viewing a detail)
-            val density = LocalDensity.current
-            val swipeThresholdPx = with(density) { 64.dp.toPx() }
-            var cumulativeDragX by remember { mutableStateOf(0f) }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .let { base ->
-                        if (detailEntry == null) {
-                            base.pointerInput(activeTab) {
-                                detectHorizontalDragGestures(
-                                    onDragStart = { cumulativeDragX = 0f },
-                                    onHorizontalDrag = { _, dragAmount ->
-                                        cumulativeDragX += dragAmount
-                                    },
-                                    onDragEnd = {
-                                        if (abs(cumulativeDragX) >= swipeThresholdPx) {
-                                            val currentIndex = bottomTabOrder.indexOf(activeTab).coerceAtLeast(0)
-                                            val target = if (cumulativeDragX > 0f) {
-                                                bottomTabOrder.getOrNull(currentIndex - 1)
-                                            } else {
-                                                bottomTabOrder.getOrNull(currentIndex + 1)
-                                            }
-                                            if (target != null) {
-                                                detailEntryId = null
-                                                activeTab = target
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                        } else base
-                    }
-            ) {
-                AnimatedContent(
-                    targetState = activeTab,
-                    transitionSpec = {
-                        val initialIndex = bottomTabOrder.indexOf(initialState).takeIf { it >= 0 } ?: 0
-                        val targetIndex = bottomTabOrder.indexOf(targetState).takeIf { it >= 0 } ?: 0
-                        val forward = targetIndex > initialIndex
-                        val enter = slideInHorizontally(animationSpec = tween(320)) { fullWidth ->
-                            if (forward) fullWidth else -fullWidth
-                        }
-                        val exit = slideOutHorizontally(animationSpec = tween(320)) { fullWidth ->
-                            if (forward) -fullWidth else fullWidth
-                        }
-                        enter togetherWith exit
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    label = "tabAnimation"
-                ) { tab ->
-                    when (tab) {
-                        BottomTab.Recents -> {
-                            RecentsScreen(
-                                modifier = Modifier.fillMaxSize(),
-                                textColor = primaryTextColor,
-                                viewModel = transcriptionViewModel,
-                                onOpenTranscription = { id ->
-                                    // Stay on Recents; just show the detail overlay
-                                    detailEntryId = id
-                                }
-                            )
-                        }
-                        BottomTab.Transcription -> {
-                            TranscriptionScreen(
-                                modifier = Modifier.fillMaxSize(),
-                                textColor = primaryTextColor,
-                                viewModel = transcriptionViewModel,
-                                isDetailVisible = detailEntry != null,
-                                onOpenTranscription = { id ->
-                                    activeTab = BottomTab.Transcription
-                                    detailEntryId = id
-                                }
-                            )
-                        }
-                        BottomTab.Recorder -> {
-                            com.example.whisper_kotlin.recorder.RecorderScreen(
-                                modifier = Modifier.fillMaxSize(),
-                                isDark = isDark,
-                                textColor = primaryTextColor,
-                                selectedModel = selectedModel,
-                                onSelectModel = { selectedModel = it },
-                                isModelDownloading = isModelDownloading,
-                                onModelDownloadingChanged = { downloading -> isModelDownloading = downloading },
-                                audioSource = audioSource,
-                                onAudioSourceChanged = { audioSource = it },
-                                transcriptionViewModel = transcriptionViewModel,
-                                command = recorderCommand,
-                                onCommandHandled = { recorderCommand = null },
-                                onRecordingStateChanged = { recording ->
-                                    isRecording = recording
-                                    if (!recording) {
-                                        isRecorderPaused = false
-                                    }
-                                }
-                            )
-                        }
-                        BottomTab.Settings -> {
-                            SettingsScreen(
-                                modifier = Modifier.fillMaxSize(),
-                                textColor = primaryTextColor,
-                                themePreference = themePreference,
-                                onThemePreferenceChange = { newPref -> themeSelection = newPref.name }
-                            )
-                        }
-                    }
-                }
-
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = detailEntry != null,
-                    modifier = Modifier.matchParentSize(),
-                    enter = slideInHorizontally(animationSpec = tween(300)) { it },
-                    exit = slideOutHorizontally(animationSpec = tween(300)) { it }
-                ) {
-                    val context = LocalContext.current
-                    val entry = detailEntry
-                    if (entry != null) {
-                        TranscriptionDetailScreen(
-                            entry = entry,
-                            textColor = primaryTextColor,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(background),
-                            viewModel = transcriptionViewModel,
-                            onBack = { detailEntryId = null },
-                            onDelete = {
-                                transcriptionViewModel.deleteTranscription(context, entry.id)
-                                detailEntryId = null
-                            }
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(background),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                BasicText(
-                                    text = "Transcription not found.",
-                                    style = TextStyle(color = primaryTextColor)
-                                )
-                                ActionButton(label = "Back", color = primaryTextColor) {
-                                    detailEntryId = null
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Bottom Navigation Bar - positioned at screen bottom with navigation bar insets
-        BottomNavigationBar(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)),
-            backgroundColor = bottomBarBg,
-            dividerColor = bottomBarDivider,
-            activeTab = if (detailEntry != null) BottomTab.Transcription else activeTab,
-            isViewingDetail = detailEntry != null,
-            activeIconColor = activeIconColor,
-            inactiveIconColor = inactiveIconColor,
-            navSelectedBg = navSelectedBg,
-            navUnselectedBg = navUnselectedBg,
-            onTabClick = { tab ->
-                detailEntryId = null
-                activeTab = tab
             }
         )
+    }
+
+    // Swipe gesture for tab navigation (disabled while viewing a detail)
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 64.dp.toPx() }
+    var cumulativeDragX by remember { mutableStateOf(0f) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.material3.Text(
+                            text = currentHeader,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                },
+                navigationIcon = {
+                    if (detailEntry != null) {
+                        IconButton(onClick = { detailEntryId = null }) {
+                            Icon(
+                                imageVector = Icons.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    if (detailEntry != null) {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Delete transcription"
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier.height(54.dp)
+            )
+        },
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.height(48.dp)
+            ) {
+                bottomTabOrder.forEach { tab ->
+                    val icon = when (tab) {
+                        BottomTab.Recents -> Icons.Filled.AccessTime
+                        BottomTab.Transcription -> Icons.Filled.Folder
+                        BottomTab.Recorder -> Icons.Filled.Mic
+                        BottomTab.Settings -> Icons.Filled.Settings
+                    }
+                    
+                    NavigationBarItem(
+                        icon = { 
+                            Icon(
+                                icon, 
+                                contentDescription = tab.header,
+                                modifier = Modifier.size(32.dp)
+                            ) 
+                        },
+                        label = null,
+                        selected = activeTab == tab && detailEntry == null,
+                        onClick = {
+                            detailEntryId = null
+                            activeTab = tab
+                        },
+                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .let { base ->
+                    if (detailEntry == null) {
+                        base.pointerInput(activeTab) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { cumulativeDragX = 0f },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    cumulativeDragX += dragAmount
+                                },
+                                onDragEnd = {
+                                    if (abs(cumulativeDragX) >= swipeThresholdPx) {
+                                        val currentIndex = bottomTabOrder.indexOf(activeTab).coerceAtLeast(0)
+                                        val target = if (cumulativeDragX > 0f) {
+                                            bottomTabOrder.getOrNull(currentIndex - 1)
+                                        } else {
+                                            bottomTabOrder.getOrNull(currentIndex + 1)
+                                        }
+                                        if (target != null) {
+                                            detailEntryId = null
+                                            activeTab = target
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    } else base
+                }
+        ) {
+            AnimatedContent(
+                targetState = activeTab,
+                transitionSpec = {
+                    val initialIndex = bottomTabOrder.indexOf(initialState).takeIf { it >= 0 } ?: 0
+                    val targetIndex = bottomTabOrder.indexOf(targetState).takeIf { it >= 0 } ?: 0
+                    val forward = targetIndex > initialIndex
+                    val enter = slideInHorizontally(animationSpec = tween(320)) { fullWidth ->
+                        if (forward) fullWidth else -fullWidth
+                    }
+                    val exit = slideOutHorizontally(animationSpec = tween(320)) { fullWidth ->
+                        if (forward) -fullWidth else fullWidth
+                    }
+                    enter togetherWith exit
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                label = "tabAnimation"
+            ) { tab ->
+                when (tab) {
+                    BottomTab.Recents -> {
+                        RecentsScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            textColor = primaryTextColor,
+                            viewModel = transcriptionViewModel,
+                            onOpenTranscription = { id ->
+                                detailEntryId = id
+                            }
+                        )
+                    }
+                    BottomTab.Transcription -> {
+                        TranscriptionScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            textColor = primaryTextColor,
+                            viewModel = transcriptionViewModel,
+                            isDetailVisible = detailEntry != null,
+                            onOpenTranscription = { id ->
+                                activeTab = BottomTab.Transcription
+                                detailEntryId = id
+                            }
+                        )
+                    }
+                    BottomTab.Recorder -> {
+                        com.example.whisper_kotlin.recorder.RecorderScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            isDark = isDark,
+                            textColor = primaryTextColor,
+                            selectedModel = selectedModel,
+                            onSelectModel = { selectedModel = it },
+                            isModelDownloading = isModelDownloading,
+                            onModelDownloadingChanged = { downloading -> isModelDownloading = downloading },
+                            audioSource = audioSource,
+                            onAudioSourceChanged = { audioSource = it },
+                            transcriptionViewModel = transcriptionViewModel,
+                            command = recorderCommand,
+                            onCommandHandled = { recorderCommand = null },
+                            onRecordingStateChanged = { recording ->
+                                isRecording = recording
+                                if (!recording) {
+                                    isRecorderPaused = false
+                                }
+                            }
+                        )
+                    }
+                    BottomTab.Settings -> {
+                        SettingsScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            textColor = primaryTextColor,
+                            themePreference = themePreference,
+                            onThemePreferenceChange = { newPref -> themeSelection = newPref.name }
+                        )
+                    }
+                }
+            }
+
+            // Detail overlay
+            androidx.compose.animation.AnimatedVisibility(
+                visible = detailEntry != null,
+                modifier = Modifier.matchParentSize(),
+                enter = slideInHorizontally(animationSpec = tween(300)) { it },
+                exit = slideOutHorizontally(animationSpec = tween(300)) { it }
+            ) {
+                val entry = detailEntry
+                if (entry != null) {
+                    TranscriptionDetailScreen(
+                        entry = entry,
+                        textColor = primaryTextColor,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                        viewModel = transcriptionViewModel,
+                        onBack = { detailEntryId = null },
+                        onDelete = {
+                            transcriptionViewModel.deleteTranscription(context, entry.id)
+                            detailEntryId = null
+                        }
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            BasicText(
+                                text = "Transcription not found.",
+                                style = TextStyle(color = primaryTextColor)
+                            )
+                            ActionButton(label = "Back", color = primaryTextColor) {
+                                detailEntryId = null
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
