@@ -12,7 +12,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,9 +51,6 @@ import androidx.compose.material.Checkbox
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
 
@@ -171,19 +167,17 @@ fun TranscriptionScreen(
 
             val folders = viewModel.listFoldersInCurrent()
             val saved = viewModel.listTranscriptionsInCurrent()
-            
+            Spacer(modifier = Modifier.height(8.dp))
             if (folders.isEmpty() && saved.isEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
-                BasicText(
-                    text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
-                    style = TextStyle(color = textColor.copy(alpha = 0.8f))
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp)
-                ) {
+            BasicText(
+                text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
+                style = TextStyle(color = textColor.copy(alpha = 0.8f))
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 // Folders first (use distinct key namespace to avoid collisions with transcription IDs)
                 items(folders, key = { folder -> "folder_" + folder.id }) { folder ->
                     val folderIsSelected = selectionMode && selectedFolderIds.contains(folder.id)
@@ -250,24 +244,6 @@ fun TranscriptionScreen(
 
                 // Then transcriptions (separate key namespace)
                 items(saved, key = { entry -> "t_" + entry.id }) { entry ->
-                    val timestamp = remember(entry.timestamp) {
-                        SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(entry.timestamp))
-                    }
-                    val durationLabel = remember(entry.transcriptionDurationMs) {
-                        if (entry.transcriptionDurationMs >= 1000L) {
-                            String.format(Locale.getDefault(), "%.1f s", entry.transcriptionDurationMs / 1000f)
-                        } else {
-                            "${entry.transcriptionDurationMs} ms"
-                        }
-                    }
-                    val summary = remember(entry.transcript) {
-                        entry.transcript
-                            .lineSequence()
-                            .firstOrNull()
-                            ?.take(160)
-                            ?.let { if (entry.transcript.length > 160) "$it…" else it }
-                            ?: "Tap to view transcript"
-                    }
                     val entryIsSelected = selectionMode && selectedTranscriptionIds.contains(entry.id)
                     val entryBg = if (entryIsSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else cardBackground
                     val entryBorder = if (entryIsSelected) MaterialTheme.colorScheme.primary else cardBorderColor
@@ -303,27 +279,32 @@ fun TranscriptionScreen(
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.Top
                             ) {
                                 Column(modifier = Modifier.weight(1f, fill = true)) {
+                                    // Transcription name
                                     BasicText(
                                         text = entry.fileLabel,
                                         style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    // Max 2 lines of transcript text
+                                    val transcriptPreview = remember(entry.transcript) {
+                                        entry.transcript
+                                            .lines()
+                                            .take(2)
+                                            .joinToString("\n")
+                                            .let { text ->
+                                                if (text.length > 120) {
+                                                    text.take(120) + "..."
+                                                } else {
+                                                    text.ifEmpty { "Tap to view transcript" }
+                                                }
+                                            }
+                                    }
                                     BasicText(
-                                        text = "Model: ${entry.modelLabel}",
-                                        style = TextStyle(color = textColor.copy(alpha = 0.7f))
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    BasicText(
-                                        text = "$timestamp",
-                                        style = TextStyle(color = textColor.copy(alpha = 0.6f))
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    BasicText(
-                                        text = "Transcription time: $durationLabel",
-                                        style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                                        text = transcriptPreview,
+                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
                                     )
                                 }
                                 if (selectionMode) {
@@ -335,11 +316,6 @@ fun TranscriptionScreen(
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            BasicText(
-                                text = summary,
-                                style = TextStyle(color = textColor.copy(alpha = 0.75f))
-                            )
                         }
                     }
                 }

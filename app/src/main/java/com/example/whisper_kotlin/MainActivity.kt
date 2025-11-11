@@ -84,6 +84,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlin.math.abs
@@ -104,16 +105,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             AppTheme {
                 HomeScreen()
-                
+
                 // Set status bar color based on theme
                 val statusBarColor = MaterialTheme.colorScheme.surface
                 val isDark = isSystemInDarkTheme()
-                
+
                 SideEffect {
                     window.statusBarColor = statusBarColor.toArgb()
                     window.navigationBarColor = android.graphics.Color.TRANSPARENT
-                    
-                    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+
+                    val insetsController =
+                        WindowCompat.getInsetsController(window, window.decorView)
                     insetsController.isAppearanceLightStatusBars = !isDark
                     insetsController.isAppearanceLightNavigationBars = !isDark
                 }
@@ -142,7 +144,11 @@ private val bottomTabOrder: List<BottomTab> = listOf(
     BottomTab.Settings
 )
 
-@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterialApi::class, ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalAnimationApi::class,
+    ExperimentalMaterialApi::class,
+    ExperimentalMaterial3Api::class
+)
 @Composable
 private fun HomeScreen() {
     var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
@@ -158,7 +164,11 @@ private fun HomeScreen() {
     }
     val primaryTextColor = MaterialTheme.colorScheme.onBackground
 
-    var recorderCommand by remember { mutableStateOf<com.example.whisper_kotlin.recorder.RecorderCommand?>(null) }
+    var recorderCommand by remember {
+        mutableStateOf<com.example.whisper_kotlin.recorder.RecorderCommand?>(
+            null
+        )
+    }
     var isRecording by remember { mutableStateOf(false) }
     var isRecorderPaused by remember { mutableStateOf(false) }
 
@@ -169,7 +179,17 @@ private fun HomeScreen() {
     var isModelDownloading by remember { mutableStateOf(false) }
 
     val detailEntry = detailEntryId?.let { transcriptionViewModel.getTranscription(it) }
-    val currentHeader = if (detailEntry != null) "Transcript" else activeTab.header
+    val uiState by transcriptionViewModel.uiState.collectAsState()
+    val currentFolder = uiState.currentFolderId?.let { folderId ->
+        uiState.folders.firstOrNull { it.id == folderId }
+    }
+    val isInFolder = uiState.currentFolderId != null
+
+    val currentHeader = when {
+        detailEntry != null -> "Transcript"
+        currentFolder != null -> currentFolder.name
+        else -> activeTab.header
+    }
     val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -196,8 +216,19 @@ private fun HomeScreen() {
             onDismissRequest = { showDeleteDialog = false },
             backgroundColor = MaterialTheme.colorScheme.surface,
             contentColor = primaryTextColor,
-            title = { Text("Delete transcription?", color = primaryTextColor, fontWeight = FontWeight.SemiBold) },
-            text = { Text("This will permanently remove ${detailEntry.fileLabel}.", color = primaryTextColor.copy(alpha = 0.85f)) },
+            title = {
+                Text(
+                    "Delete transcription?",
+                    color = primaryTextColor,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(
+                    "This will permanently remove ${detailEntry.fileLabel}.",
+                    color = primaryTextColor.copy(alpha = 0.85f)
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     transcriptionViewModel.deleteTranscription(context, detailEntry.id)
@@ -220,230 +251,251 @@ private fun HomeScreen() {
     val swipeThresholdPx = with(density) { 64.dp.toPx() }
     var cumulativeDragX by remember { mutableStateOf(0f) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
                         androidx.compose.material3.Text(
                             text = currentHeader,
                             style = MaterialTheme.typography.titleMedium
                         )
-                    }
-                },
-                navigationIcon = {
-                    if (detailEntry != null) {
-                        IconButton(onClick = { detailEntryId = null }) {
-                            Icon(
-                                imageVector = Icons.Filled.ArrowBack,
-                                contentDescription = "Back"
-                            )
+                    },
+                    modifier = Modifier.height(64.dp),
+                    navigationIcon = {
+                        if (detailEntry != null) {
+                            IconButton(onClick = { detailEntryId = null }) {
+                                Icon(
+                                    imageVector = Icons.Filled.ArrowBack,
+                                    contentDescription = "Back"
+                                )
+                            }
+                        } else if (isInFolder && activeTab == BottomTab.Transcription) {
+                            IconButton(onClick = {
+                                val parentId = currentFolder?.parentId
+                                transcriptionViewModel.navigateToFolder(parentId)
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Filled.ArrowBack,
+                                    contentDescription = "Back to parent folder"
+                                )
+                            }
                         }
-                    }
-                },
-                actions = {
-                    if (detailEntry != null) {
-                        IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Filled.Delete,
-                                contentDescription = "Delete transcription"
-                            )
+                    },
+                    actions = {
+                        if (detailEntry != null) {
+                            IconButton(onClick = { showDeleteDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Delete transcription"
+                                )
+                            }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                modifier = Modifier.height(54.dp)
-            )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.height(48.dp)
-            ) {
-                bottomTabOrder.forEach { tab ->
-                    val icon = when (tab) {
-                        BottomTab.Recents -> Icons.Filled.AccessTime
-                        BottomTab.Transcription -> Icons.Filled.Folder
-                        BottomTab.Recorder -> Icons.Filled.Mic
-                        BottomTab.Settings -> Icons.Filled.Settings
-                    }
-                    
-                    NavigationBarItem(
-                        icon = { 
-                            Icon(
-                                icon, 
-                                contentDescription = tab.header,
-                                modifier = Modifier.size(32.dp)
-                            ) 
-                        },
-                        label = null,
-                        selected = activeTab == tab && detailEntry == null,
-                        onClick = {
-                            detailEntryId = null
-                            activeTab = tab
-                        },
-                        colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            unselectedIconColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    )
-                }
-            }
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .let { base ->
-                    if (detailEntry == null) {
-                        base.pointerInput(activeTab) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { cumulativeDragX = 0f },
-                                onHorizontalDrag = { _, dragAmount ->
-                                    cumulativeDragX += dragAmount
+                    },
+                )
+            },
+            bottomBar = {
+                // Only show bottom bar when not viewing detail
+                if (detailEntry == null) {
+                    NavigationBar{
+                        bottomTabOrder.forEach { tab ->
+                            val icon = when (tab) {
+                                BottomTab.Recents -> Icons.Filled.AccessTime
+                                BottomTab.Transcription -> Icons.Filled.Folder
+                                BottomTab.Recorder -> Icons.Filled.Mic
+                                BottomTab.Settings -> Icons.Filled.Settings
+                            }
+
+                            NavigationBarItem(
+                                icon = {
+                                    Icon(
+                                        icon,
+                                        contentDescription = tab.header,
+                                        modifier = Modifier.size(32.dp)
+                                    )
                                 },
-                                onDragEnd = {
-                                    if (abs(cumulativeDragX) >= swipeThresholdPx) {
-                                        val currentIndex = bottomTabOrder.indexOf(activeTab).coerceAtLeast(0)
-                                        val target = if (cumulativeDragX > 0f) {
-                                            bottomTabOrder.getOrNull(currentIndex - 1)
-                                        } else {
-                                            bottomTabOrder.getOrNull(currentIndex + 1)
-                                        }
-                                        if (target != null) {
-                                            detailEntryId = null
-                                            activeTab = target
-                                        }
+                                label = null,
+                                selected = activeTab == tab,
+                                onClick = {
+                                    detailEntryId = null
+                                    activeTab = tab
+                                    // When clicking Transcription tab while in a folder, go to root
+                                    if (tab == BottomTab.Transcription && isInFolder) {
+                                        transcriptionViewModel.navigateToFolder(null)
                                     }
                                 }
                             )
                         }
-                    } else base
+                    }
                 }
-        ) {
-            AnimatedContent(
-                targetState = activeTab,
-                transitionSpec = {
-                    val initialIndex = bottomTabOrder.indexOf(initialState).takeIf { it >= 0 } ?: 0
-                    val targetIndex = bottomTabOrder.indexOf(targetState).takeIf { it >= 0 } ?: 0
-                    val forward = targetIndex > initialIndex
-                    val enter = slideInHorizontally(animationSpec = tween(320)) { fullWidth ->
-                        if (forward) fullWidth else -fullWidth
-                    }
-                    val exit = slideOutHorizontally(animationSpec = tween(320)) { fullWidth ->
-                        if (forward) -fullWidth else fullWidth
-                    }
-                    enter togetherWith exit
-                },
+            }
+        ) { paddingValues ->
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                label = "tabAnimation"
-            ) { tab ->
-                when (tab) {
-                    BottomTab.Recents -> {
-                        RecentsScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            textColor = primaryTextColor,
-                            viewModel = transcriptionViewModel,
-                            onOpenTranscription = { id ->
-                                detailEntryId = id
+                    .padding(paddingValues)
+                    .let { base ->
+                        if (detailEntry == null) {
+                            base.pointerInput(activeTab) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = { cumulativeDragX = 0f },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        cumulativeDragX += dragAmount
+                                    },
+                                    onDragEnd = {
+                                        if (abs(cumulativeDragX) >= swipeThresholdPx) {
+                                            val currentIndex =
+                                                bottomTabOrder.indexOf(activeTab).coerceAtLeast(0)
+                                            val target = if (cumulativeDragX > 0f) {
+                                                bottomTabOrder.getOrNull(currentIndex - 1)
+                                            } else {
+                                                bottomTabOrder.getOrNull(currentIndex + 1)
+                                            }
+                                            if (target != null) {
+                                                detailEntryId = null
+                                                activeTab = target
+                                            }
+                                        }
+                                    }
+                                )
                             }
-                        )
+                        } else base
                     }
-                    BottomTab.Transcription -> {
-                        TranscriptionScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            textColor = primaryTextColor,
-                            viewModel = transcriptionViewModel,
-                            isDetailVisible = detailEntry != null,
-                            onOpenTranscription = { id ->
-                                activeTab = BottomTab.Transcription
-                                detailEntryId = id
-                            }
-                        )
-                    }
-                    BottomTab.Recorder -> {
-                        com.example.whisper_kotlin.recorder.RecorderScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            isDark = isDark,
-                            textColor = primaryTextColor,
-                            selectedModel = selectedModel,
-                            onSelectModel = { selectedModel = it },
-                            isModelDownloading = isModelDownloading,
-                            onModelDownloadingChanged = { downloading -> isModelDownloading = downloading },
-                            audioSource = audioSource,
-                            onAudioSourceChanged = { audioSource = it },
-                            transcriptionViewModel = transcriptionViewModel,
-                            command = recorderCommand,
-                            onCommandHandled = { recorderCommand = null },
-                            onRecordingStateChanged = { recording ->
-                                isRecording = recording
-                                if (!recording) {
-                                    isRecorderPaused = false
+            ) {
+                AnimatedContent(
+                    targetState = activeTab,
+                    transitionSpec = {
+                        val initialIndex =
+                            bottomTabOrder.indexOf(initialState).takeIf { it >= 0 } ?: 0
+                        val targetIndex =
+                            bottomTabOrder.indexOf(targetState).takeIf { it >= 0 } ?: 0
+                        val forward = targetIndex > initialIndex
+                        val enter = slideInHorizontally(animationSpec = tween(320)) { fullWidth ->
+                            if (forward) fullWidth else -fullWidth
+                        }
+                        val exit = slideOutHorizontally(animationSpec = tween(320)) { fullWidth ->
+                            if (forward) -fullWidth else fullWidth
+                        }
+                        enter togetherWith exit
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    label = "tabAnimation"
+                ) { tab ->
+                    when (tab) {
+                        BottomTab.Recents -> {
+                            RecentsScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                textColor = primaryTextColor,
+                                viewModel = transcriptionViewModel,
+                                onOpenTranscription = { id ->
+                                    detailEntryId = id
                                 }
-                            }
-                        )
-                    }
-                    BottomTab.Settings -> {
-                        SettingsScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            textColor = primaryTextColor,
-                            themePreference = themePreference,
-                            onThemePreferenceChange = { newPref -> themeSelection = newPref.name }
-                        )
+                            )
+                        }
+
+                        BottomTab.Transcription -> {
+                            TranscriptionScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                textColor = primaryTextColor,
+                                viewModel = transcriptionViewModel,
+                                isDetailVisible = detailEntry != null,
+                                onOpenTranscription = { id ->
+                                    activeTab = BottomTab.Transcription
+                                    detailEntryId = id
+                                }
+                            )
+                        }
+
+                        BottomTab.Recorder -> {
+                            com.example.whisper_kotlin.recorder.RecorderScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                isDark = isDark,
+                                textColor = primaryTextColor,
+                                selectedModel = selectedModel,
+                                onSelectModel = { selectedModel = it },
+                                isModelDownloading = isModelDownloading,
+                                onModelDownloadingChanged = { downloading ->
+                                    isModelDownloading = downloading
+                                },
+                                audioSource = audioSource,
+                                onAudioSourceChanged = { audioSource = it },
+                                transcriptionViewModel = transcriptionViewModel,
+                                command = recorderCommand,
+                                onCommandHandled = { recorderCommand = null },
+                                onRecordingStateChanged = { recording ->
+                                    isRecording = recording
+                                    if (!recording) {
+                                        isRecorderPaused = false
+                                    }
+                                }
+                            )
+                        }
+
+                        BottomTab.Settings -> {
+                            SettingsScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                textColor = primaryTextColor,
+                                themePreference = themePreference,
+                                onThemePreferenceChange = { newPref ->
+                                    themeSelection = newPref.name
+                                }
+                            )
+                        }
                     }
                 }
             }
 
-            // Detail overlay
+            // Detail overlay - covers entire screen including bottom navigation
             androidx.compose.animation.AnimatedVisibility(
                 visible = detailEntry != null,
-                modifier = Modifier.matchParentSize(),
+                modifier = Modifier.fillMaxSize(),
                 enter = slideInHorizontally(animationSpec = tween(300)) { it },
                 exit = slideOutHorizontally(animationSpec = tween(300)) { it }
             ) {
                 val entry = detailEntry
                 if (entry != null) {
-                    TranscriptionDetailScreen(
-                        entry = entry,
-                        textColor = primaryTextColor,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background),
-                        viewModel = transcriptionViewModel,
-                        onBack = { detailEntryId = null },
-                        onDelete = {
-                            transcriptionViewModel.deleteTranscription(context, entry.id)
-                            detailEntryId = null
-                        }
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            BasicText(
-                                text = "Transcription not found.",
-                                style = TextStyle(color = primaryTextColor)
-                            )
-                            ActionButton(label = "Back", color = primaryTextColor) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Respect the top bar height
+                        Spacer(modifier = Modifier.height(54.dp))
+
+                        TranscriptionDetailScreen(
+                            entry = entry,
+                            textColor = primaryTextColor,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                            viewModel = transcriptionViewModel,
+                            onBack = { detailEntryId = null },
+                            onDelete = {
+                                transcriptionViewModel.deleteTranscription(context, entry.id)
                                 detailEntryId = null
+                            }
+                        )
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Respect the top bar height
+                        Spacer(modifier = Modifier.height(54.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                BasicText(
+                                    text = "Transcription not found.",
+                                    style = TextStyle(color = primaryTextColor)
+                                )
+                                ActionButton(label = "Back", color = primaryTextColor) {
+                                    detailEntryId = null
+                                }
                             }
                         }
                     }
