@@ -1,6 +1,11 @@
 package com.example.whisper_kotlin
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +59,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.Divider
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GraphicEq
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 
@@ -165,162 +178,155 @@ fun TranscriptionScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            val folders = viewModel.listFoldersInCurrent()
-            val saved = viewModel.listTranscriptionsInCurrent()
-            Spacer(modifier = Modifier.height(8.dp))
-            if (folders.isEmpty() && saved.isEmpty()) {
-            BasicText(
-                text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
-                style = TextStyle(color = textColor.copy(alpha = 0.8f))
-            )
-        } else {
-            LazyColumn(
+            // Animate folder content changes
+            AnimatedContent(
+                targetState = uiState.currentFolderId,
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Folders first (use distinct key namespace to avoid collisions with transcription IDs)
-                items(folders, key = { folder -> "folder_" + folder.id }) { folder ->
-                    val folderIsSelected = selectionMode && selectedFolderIds.contains(folder.id)
-                    val folderBg = if (folderIsSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else cardBackground
-                    val folderBorder = if (folderIsSelected) MaterialTheme.colorScheme.primary else cardBorderColor
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(color = textColor.copy(alpha = 0.2f)),
-                                onClick = {
-                                    if (selectionMode) {
-                                        selectedFolderIds = if (selectedFolderIds.contains(folder.id))
-                                            selectedFolderIds - folder.id else selectedFolderIds + folder.id
-                                    } else {
-                                        viewModel.navigateToFolder(folder.id)
-                                    }
-                                },
-                                onLongClick = {
-                                    if (!selectionMode) {
-                                        selectionMode = true
-                                        selectedFolderIds = setOf(folder.id)
-                                    }
-                                }
-                            ),
-                        shape = RoundedCornerShape(12.dp),
-                        elevation = 0.dp,
-                        backgroundColor = folderBg,
-                        border = BorderStroke(1.dp, folderBorder)
+                transitionSpec = {
+                    // Determine direction: going deeper (right to left) or backing out (left to right)
+                    val isGoingDeeper = targetState != null && (initialState == null || targetState != initialState)
+                    val isBackingOut = targetState == null || (initialState != null && targetState == null)
+                    
+                    if (isBackingOut) {
+                        // Going back: slide in from left, slide out to right
+                        slideInHorizontally(
+                            animationSpec = tween(300),
+                            initialOffsetX = { fullWidth -> -fullWidth }
+                        ) togetherWith slideOutHorizontally(
+                            animationSpec = tween(300),
+                            targetOffsetX = { fullWidth -> fullWidth }
+                        )
+                    } else {
+                        // Going deeper: slide in from right, slide out to left
+                        slideInHorizontally(
+                            animationSpec = tween(300),
+                            initialOffsetX = { fullWidth -> fullWidth }
+                        ) togetherWith slideOutHorizontally(
+                            animationSpec = tween(300),
+                            targetOffsetX = { fullWidth -> -fullWidth }
+                        )
+                    }
+                },
+                label = "folderAnimation"
+            ) { currentFolderId ->
+                val folders = viewModel.listFoldersInCurrent()
+                val saved = viewModel.listTranscriptionsInCurrent()
+                
+                if (folders.isEmpty() && saved.isEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    BasicText(
+                        text = "No saved transcriptions yet. Record or select audio from the Recorder tab to create one.",
+                        style = TextStyle(color = textColor.copy(alpha = 0.8f))
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f, fill = true)) {
-                                BasicText(
-                                    text = folder.name,
-                                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                BasicText(
-                                    text = "Folder",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                        // Folders section
+                        if (folders.isNotEmpty()) {
+                            item(key = "folders_header_$currentFolderId") {
+                                Text(
+                                    text = "Folders",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    color = textColor,
+                                    style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                                 )
                             }
-                            if (selectionMode) {
-                                Checkbox(
-                                    checked = selectedFolderIds.contains(folder.id),
-                                    onCheckedChange = { checked ->
-                                        selectedFolderIds = if (checked) selectedFolderIds + folder.id else selectedFolderIds - folder.id
+                            
+                            folders.forEachIndexed { index, folder ->
+                                item(key = "folder_${folder.id}_in_$currentFolderId") {
+                                    FolderItem(
+                                        folder = folder,
+                                        textColor = textColor,
+                                        selectionMode = selectionMode,
+                                        isSelected = selectedFolderIds.contains(folder.id),
+                                        onFolderClick = {
+                                            if (selectionMode) {
+                                                selectedFolderIds = if (selectedFolderIds.contains(folder.id))
+                                                    selectedFolderIds - folder.id else selectedFolderIds + folder.id
+                                            } else {
+                                                viewModel.navigateToFolder(folder.id)
+                                            }
+                                        },
+                                        onFolderLongClick = {
+                                            if (!selectionMode) {
+                                                selectionMode = true
+                                                selectedFolderIds = setOf(folder.id)
+                                            }
+                                        },
+                                        onSelectionChanged = { checked ->
+                                            selectedFolderIds = if (checked) selectedFolderIds + folder.id else selectedFolderIds - folder.id
+                                        }
+                                    )
+                                    
+                                    // Add divider except after last folder (if no recordings) or before recordings section
+                                    if (index < folders.lastIndex || saved.isNotEmpty()) {
+                                        androidx.compose.material.Divider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = textColor.copy(alpha = 0.1f),
+                                            thickness = 0.5.dp
+                                        )
                                     }
-                                )
-                            } else {
-                                BasicText(
-                                    text = ">",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.6f), fontWeight = FontWeight.Bold)
-                                )
+                                }
                             }
                         }
-                    }
-                }
-
-                // Then transcriptions (separate key namespace)
-                items(saved, key = { entry -> "t_" + entry.id }) { entry ->
-                    val entryIsSelected = selectionMode && selectedTranscriptionIds.contains(entry.id)
-                    val entryBg = if (entryIsSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else cardBackground
-                    val entryBorder = if (entryIsSelected) MaterialTheme.colorScheme.primary else cardBorderColor
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(color = textColor.copy(alpha = 0.2f)),
-                                onClick = {
-                                    if (selectionMode) {
-                                        selectedTranscriptionIds = if (selectedTranscriptionIds.contains(entry.id))
-                                            selectedTranscriptionIds - entry.id else selectedTranscriptionIds + entry.id
-                                    } else {
-                                        onOpenTranscription(entry.id)
-                                    }
-                                },
-                                onLongClick = {
-                                    if (!selectionMode) {
-                                        selectionMode = true
-                                        selectedTranscriptionIds = setOf(entry.id)
-                                    }
-                                }
-                            ),
-                        shape = RoundedCornerShape(12.dp),
-                        elevation = 0.dp,
-                        backgroundColor = entryBg,
-                        border = BorderStroke(1.dp, entryBorder)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Column(modifier = Modifier.weight(1f, fill = true)) {
-                                    // Transcription name
-                                    BasicText(
-                                        text = entry.fileLabel,
-                                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    // Max 2 lines of transcript text
-                                    val transcriptPreview = remember(entry.transcript) {
-                                        entry.transcript
-                                            .lines()
-                                            .take(2)
-                                            .joinToString("\n")
-                                            .let { text ->
-                                                if (text.length > 120) {
-                                                    text.take(120) + "..."
-                                                } else {
-                                                    text.ifEmpty { "Tap to view transcript" }
-                                                }
+                        
+                        // Recordings section
+                        if (saved.isNotEmpty()) {
+                            item(key = "recordings_header_$currentFolderId") {
+                                Text(
+                                    text = if (currentFolderId == null) "Uncategorized Recordings" else "Recordings",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    color = textColor,
+                                    style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                )
+                            }
+                            
+                            saved.forEachIndexed { index, entry ->
+                                item(key = "recording_${entry.id}_in_$currentFolderId") {
+                                    RecordingItem(
+                                        entry = entry,
+                                        textColor = textColor,
+                                        selectionMode = selectionMode,
+                                        isSelected = selectedTranscriptionIds.contains(entry.id),
+                                        onRecordingClick = {
+                                            if (selectionMode) {
+                                                selectedTranscriptionIds = if (selectedTranscriptionIds.contains(entry.id))
+                                                    selectedTranscriptionIds - entry.id else selectedTranscriptionIds + entry.id
+                                            } else {
+                                                onOpenTranscription(entry.id)
                                             }
-                                    }
-                                    BasicText(
-                                        text = transcriptPreview,
-                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
-                                    )
-                                }
-                                if (selectionMode) {
-                                    Checkbox(
-                                        checked = selectedTranscriptionIds.contains(entry.id),
-                                        onCheckedChange = { checked ->
+                                        },
+                                        onRecordingLongClick = {
+                                            if (!selectionMode) {
+                                                selectionMode = true
+                                                selectedTranscriptionIds = setOf(entry.id)
+                                            }
+                                        },
+                                        onSelectionChanged = { checked ->
                                             selectedTranscriptionIds = if (checked) selectedTranscriptionIds + entry.id else selectedTranscriptionIds - entry.id
                                         }
                                     )
+                                    
+                                    // Add divider except for last item
+                                    if (index < saved.lastIndex) {
+                                        androidx.compose.material.Divider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = textColor.copy(alpha = 0.1f),
+                                            thickness = 0.5.dp
+                                        )
+                                    }
                                 }
                             }
+                        }
+                        
+                        // Bottom padding
+                        item {
+                            Spacer(modifier = Modifier.height(80.dp)) // Space for FAB
                         }
                     }
                 }
             }
-        }
 
         // Legacy per-item delete dialog retained if something still triggers it
         val entryToDelete = pendingDelete
@@ -447,4 +453,143 @@ fun TranscriptionScreen(
         }
     }
   }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FolderItem(
+    folder: Folder,
+    textColor: Color,
+    selectionMode: Boolean,
+    isSelected: Boolean,
+    onFolderClick: () -> Unit,
+    onFolderLongClick: () -> Unit,
+    onSelectionChanged: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = textColor.copy(alpha = 0.1f)),
+                onClick = onFolderClick,
+                onLongClick = onFolderLongClick
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Folder icon
+        Icon(
+            imageVector = Icons.Filled.Folder,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        
+        Spacer(modifier = Modifier.padding(horizontal = 8.dp))
+        
+        // Folder content
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = folder.name,
+                color = textColor,
+                style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            )
+        }
+        
+        // Selection checkbox or arrow
+        if (selectionMode) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = onSelectionChanged
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RecordingItem(
+    entry: SavedTranscription,
+    textColor: Color,
+    selectionMode: Boolean,
+    isSelected: Boolean,
+    onRecordingClick: () -> Unit,
+    onRecordingLongClick: () -> Unit,
+    onSelectionChanged: (Boolean) -> Unit
+) {
+    val firstLine = remember(entry.transcript) {
+        entry.transcript
+            .lines()
+            .firstOrNull()
+            ?.trim()
+            ?.take(80) // Limit to reasonable length
+            ?.let { if (entry.transcript.length > 80) "$it..." else it }
+            ?: "Tap to view transcript"
+    }
+    
+    val durationText = remember(entry.transcriptionDurationMs) {
+        val durationSec = (entry.transcriptionDurationMs / 1000).toInt()
+        val minutes = durationSec / 60
+        val seconds = durationSec % 60
+        String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+    }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = textColor.copy(alpha = 0.1f)),
+                onClick = onRecordingClick,
+                onLongClick = onRecordingLongClick
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Waveform icon
+        Icon(
+            imageVector = Icons.Filled.GraphicEq,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        
+        Spacer(modifier = Modifier.padding(horizontal = 8.dp))
+        
+        // Content
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = entry.fileLabel,
+                color = textColor,
+                style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = firstLine,
+                color = textColor.copy(alpha = 0.6f),
+                style = TextStyle(fontSize = 12.sp)
+            )
+        }
+        
+        // Duration and selection
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!selectionMode) {
+                Text(
+                    text = durationText,
+                    color = textColor.copy(alpha = 0.6f),
+                    style = TextStyle(fontSize = 12.sp)
+                )
+            } else {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = onSelectionChanged
+                )
+            }
+        }
+    }
 }

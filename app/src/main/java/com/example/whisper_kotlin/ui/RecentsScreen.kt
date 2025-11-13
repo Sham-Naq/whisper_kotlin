@@ -1,6 +1,5 @@
 package com.example.whisper_kotlin
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -10,11 +9,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.Card
+import androidx.compose.material.Divider
+import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.ripple
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -26,9 +29,44 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+data class TimeGroup(
+    val title: String,
+    val entries: List<SavedTranscription>
+)
+
+private fun getTimeCategory(timestamp: Long, now: Long): String {
+    val calendar = Calendar.getInstance()
+    calendar.timeInMillis = now
+    
+    val todayStart = calendar.apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    
+    val weekStart = calendar.apply {
+        add(Calendar.DAY_OF_YEAR, -7)
+    }.timeInMillis
+    
+    val monthStart = calendar.apply {
+        timeInMillis = now
+        add(Calendar.DAY_OF_YEAR, -30)
+    }.timeInMillis
+    
+    return when {
+        timestamp >= todayStart -> "Today"
+        timestamp >= weekStart -> "This Week"  
+        timestamp >= monthStart -> "This Month"
+        else -> "A Long Time Ago"
+    }
+}
 
 @Composable
 fun RecentsScreen(
@@ -38,107 +76,147 @@ fun RecentsScreen(
     onOpenTranscription: (Long) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-
     val now = System.currentTimeMillis()
-    val fiveDaysMs = 5L * 24 * 60 * 60 * 1000
 
-    val recent = remember(uiState.savedTranscriptions) {
+    val groupedTranscriptions = remember(uiState.savedTranscriptions) {
         uiState.savedTranscriptions
-            .asSequence()
-            .filter { it.timestamp >= now - fiveDaysMs }
             .sortedByDescending { it.timestamp }
-            .take(10)
-            .toList()
+            .take(20) // Increased from 10 to 20
+            .groupBy { getTimeCategory(it.timestamp, now) }
+            .map { (title, entries) -> TimeGroup(title, entries) }
+            .sortedBy { group ->
+                when (group.title) {
+                    "Today" -> 0
+                    "This Week" -> 1
+                    "This Month" -> 2
+                    "A Long Time Ago" -> 3
+                    else -> 4
+                }
+            }
     }
 
-    val cardBackground = MaterialTheme.colorScheme.surfaceContainer
-    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
-
-    if (recent.isEmpty()) {
-        Column(modifier = modifier) {
-            Text(
-                text = "No recent transcriptions in the last 5 days.",
-                color = textColor.copy(alpha = 0.8f)
+    if (groupedTranscriptions.isEmpty() || groupedTranscriptions.all { it.entries.isEmpty() }) {
+        Column(modifier = modifier.padding(16.dp)) {
+            androidx.compose.material.Text(
+                text = "No recent transcriptions.",
+                color = textColor.copy(alpha = 0.8f),
+                style = TextStyle(fontSize = 16.sp)
             )
         }
         return
     }
 
-    Column(modifier = modifier) {
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(recent, key = { it.id }) { entry ->
-                val timestamp = remember(entry.timestamp) {
-                    SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(entry.timestamp))
+    LazyColumn(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        groupedTranscriptions.forEachIndexed { groupIndex, group ->
+            if (group.entries.isNotEmpty()) {
+                // Section header
+                item(key = "header_${group.title}") {
+                    androidx.compose.material.Text(
+                        text = group.title,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        color = textColor,
+                        style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    )
                 }
-                val durationLabel = remember(entry.transcriptionDurationMs) {
-                    if (entry.transcriptionDurationMs >= 1000L) {
-                        String.format(Locale.getDefault(), "%.1f s", entry.transcriptionDurationMs / 1000f)
-                    } else {
-                        "${entry.transcriptionDurationMs} ms"
-                    }
-                }
-                val summary = remember(entry.transcript) {
-                    entry.transcript
-                        .lineSequence()
-                        .firstOrNull()
-                        ?.take(160)
-                        ?.let { if (entry.transcript.length > 160) "$it…" else it }
-                        ?: "Tap to view transcript"
-                }
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = ripple(color = textColor.copy(alpha = 0.2f))
-                        ) { onOpenTranscription(entry.id) },
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                    elevation = 0.dp,
-                    backgroundColor = cardBackground,
-                    border = BorderStroke(1.dp, cardBorderColor)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f, fill = true)) {
-                                androidx.compose.foundation.text.BasicText(
-                                    text = entry.fileLabel,
-                                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                androidx.compose.foundation.text.BasicText(
-                                    text = "Model: ${entry.modelLabel}",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.7f))
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                androidx.compose.foundation.text.BasicText(
-                                    text = "$timestamp",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                androidx.compose.foundation.text.BasicText(
-                                    text = "Transcription time: $durationLabel",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.6f))
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        androidx.compose.foundation.text.BasicText(
-                            text = summary,
-                            style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                
+                // Entries in this group
+                group.entries.forEachIndexed { entryIndex, entry ->
+                    item(key = "entry_${entry.id}") {
+                        TranscriptionItem(
+                            entry = entry,
+                            textColor = textColor,
+                            onClick = { onOpenTranscription(entry.id) }
                         )
+                        
+                        // Add divider except for the last item in the last group
+                        val isLastGroup = groupIndex == groupedTranscriptions.lastIndex
+                        val isLastItem = entryIndex == group.entries.lastIndex
+                        if (!(isLastGroup && isLastItem)) {
+                            Divider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = textColor.copy(alpha = 0.1f),
+                                thickness = 0.5.dp
+                            )
+                        }
                     }
                 }
             }
         }
+        
+        // Add bottom padding
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun TranscriptionItem(
+    entry: SavedTranscription,
+    textColor: Color,
+    onClick: () -> Unit
+) {
+    val firstLine = remember(entry.transcript) {
+        entry.transcript
+            .lines()
+            .firstOrNull()
+            ?.trim()
+            ?.take(80) // Limit to reasonable length
+            ?.let { if (entry.transcript.length > 80) "$it..." else it }
+            ?: "Tap to view transcript"
+    }
+    
+    val durationText = remember(entry.transcriptionDurationMs) {
+        val durationSec = (entry.transcriptionDurationMs / 1000).toInt()
+        val minutes = durationSec / 60
+        val seconds = durationSec % 60
+        String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+    }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = textColor.copy(alpha = 0.1f))
+            ) { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Waveform icon
+        Icon(
+            imageVector = Icons.Filled.GraphicEq,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        
+        Spacer(modifier = Modifier.padding(horizontal = 8.dp))
+        
+        // Content
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            androidx.compose.material.Text(
+                text = entry.fileLabel,
+                color = textColor,
+                style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            androidx.compose.material.Text(
+                text = firstLine,
+                color = textColor.copy(alpha = 0.6f),
+                style = TextStyle(fontSize = 12.sp)
+            )
+        }
+        
+        // Duration
+        androidx.compose.material.Text(
+            text = durationText,
+            color = textColor.copy(alpha = 0.6f),
+            style = TextStyle(fontSize = 12.sp)
+        )
     }
 }
