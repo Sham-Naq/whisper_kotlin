@@ -23,6 +23,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.luminance
+import com.example.whisper_kotlin.navigation.ThemePreference
 
 @Composable
 fun SettingsScreen(
@@ -36,7 +37,6 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.Top,
         horizontalAlignment = Alignment.Start
     ) {
-        BasicText("Settings", style = TextStyle(color = textColor))
         Spacer(modifier = Modifier.height(16.dp))
 
         val labels = remember {
