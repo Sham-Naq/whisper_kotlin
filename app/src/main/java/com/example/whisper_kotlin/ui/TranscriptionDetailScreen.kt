@@ -10,6 +10,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,10 +19,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.Card
 import androidx.compose.material.FloatingActionButton
@@ -90,7 +90,6 @@ fun TranscriptionDetailScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var showTimestamps by remember(currentEntry.id) { mutableStateOf(false) }
-    val scrollState = rememberScrollState()
     val isDark = isSystemInDarkTheme()
     val selectorButtonBg = MaterialTheme.colorScheme.surfaceVariant
     val dialogBackground = MaterialTheme.colorScheme.surface
@@ -189,98 +188,40 @@ fun TranscriptionDetailScreen(
         }
     }
 
-    // Define card colors - slightly different from background
-    val cardBackground = MaterialTheme.colorScheme.surfaceContainer
-    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant
-    val cornerRadius = 12.dp
+    // Define card colors inspired by iOS styling
+    val pageBackground = MaterialTheme.colorScheme.background
+    val subtleCardBackground = pageBackground
+    val transcriptCardBackground = MaterialTheme.colorScheme.surface
+    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)
+    val cornerRadius = 16.dp
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(pageBackground)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 8.dp, vertical = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Card 1: Metadata and action buttons
+            // Card 1: Metadata overview
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(cornerRadius),
-                backgroundColor = cardBackground,
-                elevation = 4.dp,
+                backgroundColor = subtleCardBackground,
+                elevation = 0.dp,
                 border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        BasicText(
-                            text = currentEntry.fileLabel,
-                            style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold),
-                            modifier = Modifier.weight(1f, fill = true)
-                        )
-                        DetailActionIcon(
-                            icon = Icons.Filled.Refresh,
-                            tint = Color(0xFFFFA726),
-                            background = Color(0xFFFFA726),
-                            contentDescription = "Re-transcribe",
-                            enabled = !uiState.isTranscribing && currentEntry.audioPath != null,
-                            onClick = {
-                                if (reTranscribeSelectedModel == null) {
-                                    reTranscribeSelectedModel = modelDownloadState.selectedModel ?: entryModelOption
-                                }
-                                showReTranscribeDialog = true
-                            }
-                        )
-                        val timestampAvailable = !currentEntry.timestampedTranscript.isNullOrBlank() || audioFile != null
-                        DetailActionIcon(
-                            icon = Icons.Filled.AccessTime,
-                            tint = Color(0xFFBA68C8),
-                            background = Color(0xFFBA68C8),
-                            contentDescription = if (showTimestamps) "Hide timestamps" else "Show with timestamps",
-                            strikeThrough = showTimestamps,
-                            enabled = !uiState.isTranscribing && timestampAvailable,
-                            onClick = {
-                                if (showTimestamps) {
-                                    showTimestamps = false
-                                } else {
-                                    val existing = currentEntry.timestampedTranscript
-                                    if (!existing.isNullOrBlank()) {
-                                        showTimestamps = true
-                                    } else {
-                                        val hasAudio = audioFile != null
-                                        if (hasAudio) {
-                                            showTimestamps = true
-                                            viewModel.ensureTimestampedTranscript(context, currentEntry.id)
-                                        } else {
-                                            Toast.makeText(context, "Original audio missing", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                            }
-                        )
-                        DetailActionIcon(
-                            icon = Icons.Filled.ContentCopy,
-                            tint = Color(0xFF64B5F6),
-                            background = Color(0xFF64B5F6),
-                            contentDescription = "Copy transcript",
-                            onClick = {
-                                val textToCopy = if (showTimestamps) {
-                                    currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: currentEntry.transcript
-                                } else {
-                                    currentEntry.transcript
-                                }
-                                clipboardManager.setText(AnnotatedString(textToCopy))
-                                Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-                    
+                    BasicText(
+                        text = currentEntry.fileLabel,
+                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                    )
                     BasicText(
                         text = "Model: ${currentEntry.modelLabel}",
                         style = TextStyle(color = textColor.copy(alpha = 0.75f))
@@ -296,12 +237,146 @@ fun TranscriptionDetailScreen(
                 }
             }
 
-            // Card 2: Audio seekbar
+            val transcriptBody = when {
+                showTimestamps -> currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: "Generating timestamps…"
+                else -> currentEntry.transcript
+            }
+            val bodyStyle = TextStyle(color = textColor.copy(alpha = 0.85f))
+            val annotatedTranscript = remember(transcriptBody, showTimestamps, textColor) {
+                if (!showTimestamps) {
+                    AnnotatedString(transcriptBody)
+                } else {
+                    val timestampStyle = SpanStyle(color = textColor.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                    val lines = transcriptBody.split('\n')
+                    buildAnnotatedString {
+                        lines.forEachIndexed { index, line ->
+                            if (line.isNotEmpty() && line.startsWith('(') && line.indexOf(')') > 0) {
+                                val endIndex = line.indexOf(')')
+                                withStyle(timestampStyle) {
+                                    append(line.substring(0, endIndex + 1))
+                                }
+                                append(line.substring(endIndex + 1))
+                            } else {
+                                append(line)
+                            }
+                            if (index < lines.size - 1) {
+                                append('\n')
+                            }
+                        }
+                    }
+                }
+            }
+            val timestampAvailable = !currentEntry.timestampedTranscript.isNullOrBlank() || audioFile != null
+
+            // Card 2: Transcription content + actions
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = true),
+                shape = RoundedCornerShape(cornerRadius + 12.dp),
+                backgroundColor = transcriptCardBackground,
+                elevation = 6.dp,
+                border = BorderStroke(1.dp, cardBorderColor)
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val wordCount = remember(transcriptBody) {
+                                transcriptBody.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+                            }
+                            val charCount = remember(transcriptBody) { transcriptBody.length }
+                            Column(
+                                modifier = Modifier.weight(1f, fill = true)
+                            ) {
+                                BasicText(
+                                    text = "${wordCount} words • ${charCount} chars",
+                                    style = TextStyle(color = textColor.copy(alpha = 0.7f), fontSize = MaterialTheme.typography.bodySmall.fontSize)
+                                )
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                DetailActionIcon(
+                                    icon = Icons.Filled.Refresh,
+                                    tint = Color(0xFFFFA726),
+                                    background = Color(0xFFFFA726),
+                                    contentDescription = "Re-transcribe",
+                                    enabled = !uiState.isTranscribing && currentEntry.audioPath != null,
+                                    onClick = {
+                                        if (reTranscribeSelectedModel == null) {
+                                            reTranscribeSelectedModel = modelDownloadState.selectedModel ?: entryModelOption
+                                        }
+                                        showReTranscribeDialog = true
+                                    }
+                                )
+                                DetailActionIcon(
+                                    icon = Icons.Filled.AccessTime,
+                                    tint = Color(0xFFBA68C8),
+                                    background = Color(0xFFBA68C8),
+                                    contentDescription = if (showTimestamps) "Hide timestamps" else "Show with timestamps",
+                                    strikeThrough = showTimestamps,
+                                    enabled = !uiState.isTranscribing && timestampAvailable,
+                                    onClick = {
+                                        if (showTimestamps) {
+                                            showTimestamps = false
+                                        } else {
+                                            val existing = currentEntry.timestampedTranscript
+                                            if (!existing.isNullOrBlank()) {
+                                                showTimestamps = true
+                                            } else {
+                                                val hasAudio = audioFile != null
+                                                if (hasAudio) {
+                                                    showTimestamps = true
+                                                    viewModel.ensureTimestampedTranscript(context, currentEntry.id)
+                                                } else {
+                                                    Toast.makeText(context, "Original audio missing", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+                                DetailActionIcon(
+                                    icon = Icons.Filled.ContentCopy,
+                                    tint = Color(0xFF64B5F6),
+                                    background = Color(0xFF64B5F6),
+                                    contentDescription = "Copy transcript",
+                                    onClick = {
+                                        val textToCopy = if (showTimestamps) {
+                                            currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: currentEntry.transcript
+                                        } else {
+                                            currentEntry.transcript
+                                        }
+                                        clipboardManager.setText(AnnotatedString(textToCopy))
+                                        Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    item {
+                        BasicText(
+                            text = annotatedTranscript,
+                            style = bodyStyle
+                        )
+                    }
+                }
+            }
+
+            // Card 3: Audio seekbar pinned to bottom
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(cornerRadius),
-                backgroundColor = cardBackground,
-                elevation = 4.dp,
+                backgroundColor = subtleCardBackground,
+                elevation = 0.dp,
                 border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 Column(
@@ -365,60 +440,6 @@ fun TranscriptionDetailScreen(
                             style = TextStyle(color = textColor.copy(alpha = 0.6f))
                         )
                     }
-                }
-            }
-
-            // Card 3: Transcript text
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(cornerRadius),
-                backgroundColor = cardBackground,
-                elevation = 4.dp,
-                border = BorderStroke(1.dp, cardBorderColor)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val transcriptLabel = if (showTimestamps) "Transcript (timestamps)" else "Transcript"
-                    BasicText(
-                        text = transcriptLabel,
-                        style = TextStyle(color = textColor, fontWeight = FontWeight.Bold)
-                    )
-                    
-                    val transcriptBody = when {
-                        showTimestamps -> currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: "Generating timestamps…"
-                        else -> currentEntry.transcript
-                    }
-                    val bodyStyle = TextStyle(color = textColor.copy(alpha = 0.85f))
-                    val annotatedTranscript = remember(transcriptBody, showTimestamps, textColor) {
-                        if (!showTimestamps) {
-                            AnnotatedString(transcriptBody)
-                        } else {
-                            val timestampStyle = SpanStyle(color = textColor.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
-                            val lines = transcriptBody.split('\n')
-                            buildAnnotatedString {
-                                lines.forEachIndexed { index, line ->
-                                    if (line.isNotEmpty() && line.startsWith('(') && line.indexOf(')') > 0) {
-                                        val endIndex = line.indexOf(')')
-                                        withStyle(timestampStyle) {
-                                            append(line.substring(0, endIndex + 1))
-                                        }
-                                        append(line.substring(endIndex + 1))
-                                    } else {
-                                        append(line)
-                                    }
-                                    if (index < lines.size - 1) {
-                                        append('\n')
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    BasicText(
-                        text = annotatedTranscript,
-                        style = bodyStyle
-                    )
                 }
             }
         }
