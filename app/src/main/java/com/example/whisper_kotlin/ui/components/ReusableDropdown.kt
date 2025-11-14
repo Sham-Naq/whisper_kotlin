@@ -53,19 +53,23 @@ fun ReusableDropdown(
     var expanded by remember { mutableStateOf(false) }
     var anchorBounds by remember { mutableStateOf(Rect.Zero) }
 
+    val showLabel = label.isNotBlank()
+
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = if (showLabel) Arrangement.spacedBy(8.dp) else Arrangement.spacedBy(0.dp)
     ) {
-        // Label
-        BasicText(
-            text = label,
-            style = TextStyle(
-                color = textColor.copy(alpha = 0.7f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
+        if (showLabel) {
+            // Label
+            BasicText(
+                text = label,
+                style = TextStyle(
+                    color = textColor.copy(alpha = 0.7f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
             )
-        )
+        }
 
         // Dropdown button
         Row(
@@ -85,7 +89,10 @@ fun ReusableDropdown(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = ripple(color = textColor.copy(alpha = 0.1f))
                 ) { expanded = !expanded }
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .padding(
+                    horizontal = if (showLabel) 16.dp else 12.dp,
+                    vertical = if (showLabel) 14.dp else 8.dp
+                )
                 .onGloballyPositioned { coords ->
                     anchorBounds = coords.boundsInWindow()
                 },

@@ -52,6 +52,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -393,88 +394,132 @@ fun RecorderScreen(
         ) {
             // Show different content based on state
             when {
-                // Recording state: Show visualizer
+                // Recording state: Show visualizer centered vertically
                 isRecording -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                RoundedCornerShape(16.dp)
-                            ),
+                            .weight(1f, fill = true),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (recorderPaused) {
-                            Text(
-                                text = "Recording Paused",
-                                color = textColor.copy(alpha = 0.5f),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        } else {
-                            LineBarWaveform(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(16.dp),
-                                bars = bars,
-                                color = MaterialTheme.colorScheme.primary,
-                                backgroundColor = null
-                            )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    RoundedCornerShape(16.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (recorderPaused) {
+                                Text(
+                                    text = "Recording Paused",
+                                    color = textColor.copy(alpha = 0.5f),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            } else {
+                                LineBarWaveform(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp),
+                                    bars = bars,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    backgroundColor = null
+                                )
+                            }
                         }
                     }
                 }
-                // Transcribing state: Show loading
+                // Transcribing state: Centered Material3 indicator
                 transcriptionUi.isTranscribing -> {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = true),
+                        contentAlignment = Alignment.Center
                     ) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            modifier = Modifier.size(60.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 4.dp
-                        )
-                        Text(
-                            text = "Transcribing...",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = textColor
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(72.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                strokeWidth = 6.dp
+                            )
+                            Text(
+                                text = "Transcribing...",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = textColor
+                            )
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = {
+                                    transcriptionViewModel.cancelTranscription()
+                                    showTranscriptionComplete = false
+                                    isRecordedAudio = false
+                                    currentWavFile()?.delete()
+                                    wavFilePath = null
+                                    rawFilePath = null
+                                    transcriptionName = generateDefaultTranscriptionName()
+                                    releasePlayer()
+                                },
+                                modifier = Modifier
+                                    .padding(top = 8.dp)
+                                    .height(48.dp)
+                            ) {
+                                Text(
+                                    text = "Cancel",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     }
                 }
                 // Transcription complete state: Show success message
                 showTranscriptionComplete -> {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = true),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "Transcription Saved",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        androidx.compose.material3.Button(
-                            onClick = {
-                                // Reset to default state
-                                showTranscriptionComplete = false
-                                wavFilePath = null
-                                rawFilePath = null
-                                isRecordedAudio = false
-                                transcriptionName = generateDefaultTranscriptionName()
-                                releasePlayer()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(12.dp)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(24.dp)
                         ) {
                             Text(
-                                text = "Finish",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold
+                                text = "Transcription Saved",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
+                            androidx.compose.material3.Button(
+                                onClick = {
+                                    // Reset to default state
+                                    showTranscriptionComplete = false
+                                    wavFilePath = null
+                                    rawFilePath = null
+                                    isRecordedAudio = false
+                                    transcriptionName = generateDefaultTranscriptionName()
+                                    releasePlayer()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = "Finish",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
@@ -525,6 +570,11 @@ fun RecorderScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .shadow(
+                                elevation = 4.dp,
+                                shape = RoundedCornerShape(16.dp),
+                                clip = false
+                            )
                             .background(
                                 if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7),
                                 RoundedCornerShape(16.dp)
@@ -537,6 +587,7 @@ fun RecorderScreen(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+
                             Icon(
                                 imageVector = androidx.compose.material.icons.Icons.Outlined.Mic,
                                 contentDescription = null,
@@ -582,7 +633,7 @@ fun RecorderScreen(
 
                         // Divider
                         androidx.compose.material3.Divider(
-                            modifier = Modifier.padding(horizontal = 12.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                             color = textColor.copy(alpha = 0.1f),
                             thickness = 0.5.dp
                         )
@@ -671,7 +722,7 @@ fun RecorderScreen(
 
                         // Divider
                         androidx.compose.material3.Divider(
-                            modifier = Modifier.padding(horizontal = 12.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                             color = textColor.copy(alpha = 0.1f),
                             thickness = 0.5.dp
                         )
@@ -800,7 +851,7 @@ fun RecorderScreen(
             // Bottom section - Record button
             Column(
                 modifier = Modifier
-                    .padding(bottom = 16.dp, top = 16.dp),
+                    .padding(bottom = 24.dp, top = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (isRecording) {
@@ -887,27 +938,39 @@ fun RecorderScreen(
                     }
                 } else if (!showTranscriptionComplete && !transcriptionUi.isTranscribing) {
                     // Show red record button when not recording and not transcribing
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .background(
-                                color = Color(0xFFFF3B30),
-                                shape = CircleShape
-                            )
-                            .clickable {
-                                val hasPermission = ContextCompat.checkSelfPermission(
-                                    context,
-                                    android.Manifest.permission.RECORD_AUDIO
-                                ) == PackageManager.PERMISSION_GRANTED
-                                if (hasPermission) {
-                                    startRecording()
-                                } else {
-                                    requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                }
-                            },
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Empty - just red circle without icon
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .background(
+                                    color = Color(0xFFFF3B30),
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    val hasPermission = ContextCompat.checkSelfPermission(
+                                        context,
+                                        android.Manifest.permission.RECORD_AUDIO
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                    if (hasPermission) {
+                                        startRecording()
+                                    } else {
+                                        requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Empty - just red circle without icon
+                        }
+
+                        Text(
+                            text = "Start Recording",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = textColor
+                        )
                     }
                 }
 

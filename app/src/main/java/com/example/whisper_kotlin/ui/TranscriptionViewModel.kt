@@ -6,12 +6,14 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.whisper_kotlin.data.TranscriptionRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -59,6 +61,7 @@ class TranscriptionViewModel(
     val uiState: StateFlow<TranscriptionUiState> = _uiState.asStateFlow()
     private val idCounter = AtomicLong(0L)
     private val folderIdCounter = AtomicLong(0L)
+    private var currentTranscriptionJob: Job? = null
 
     init {
         viewModelScope.launch(ioDispatcher) {
@@ -234,7 +237,8 @@ class TranscriptionViewModel(
             return
         }
 
-        viewModelScope.launch(ioDispatcher) {
+        currentTranscriptionJob?.cancel()
+        currentTranscriptionJob = viewModelScope.launch(ioDispatcher) {
             try {
                 _uiState.update {
                     it.copy(
@@ -270,11 +274,15 @@ class TranscriptionViewModel(
                 )
                 saveTranscriptionEntry(entry)
                 _uiState.update { it.copy(statusMessage = "Transcription saved: $fileLabel") }
+            } catch (ce: CancellationException) {
+                appendLog("Transcription cancelled")
+                _uiState.update { it.copy(statusMessage = "Transcription cancelled") }
             } catch (t: Throwable) {
                 appendLog("Transcribe failed: $t")
                 _uiState.update { it.copy(statusMessage = "Transcribe failed: ${t.message}") }
             } finally {
                 _uiState.update { it.copy(isTranscribing = false, progress = null) }
+                currentTranscriptionJob = null
             }
         }
     }
@@ -304,7 +312,8 @@ class TranscriptionViewModel(
         val source = AudioSource.File(audioFile.absolutePath)
         val option = selectedModel ?: modelOptionFromLabel(entrySnapshot.modelLabel)
 
-        viewModelScope.launch(ioDispatcher) {
+        currentTranscriptionJob?.cancel()
+        currentTranscriptionJob = viewModelScope.launch(ioDispatcher) {
             try {
                 _uiState.update {
                     it.copy(
@@ -334,11 +343,15 @@ class TranscriptionViewModel(
                     current.copy(savedTranscriptions = next, statusMessage = "Updated ${entrySnapshot.fileLabel}")
                 }
                 TranscriptionRepository.persist(persisted)
+            } catch (ce: CancellationException) {
+                appendLog("Re-transcription cancelled")
+                _uiState.update { it.copy(statusMessage = "Re-transcription cancelled") }
             } catch (t: Throwable) {
                 appendLog("Re-transcribe failed: $t")
                 _uiState.update { it.copy(statusMessage = "Re-transcribe failed: ${t.message}") }
             } finally {
                 _uiState.update { it.copy(isTranscribing = false, progress = null) }
+                currentTranscriptionJob = null
             }
         }
     }
@@ -372,7 +385,8 @@ class TranscriptionViewModel(
         val option = modelOptionFromLabel(entry.modelLabel)
         val source = AudioSource.File(audioFile.absolutePath)
 
-        viewModelScope.launch(ioDispatcher) {
+        currentTranscriptionJob?.cancel()
+        currentTranscriptionJob = viewModelScope.launch(ioDispatcher) {
             try {
                 _uiState.update {
                     it.copy(
@@ -397,12 +411,24 @@ class TranscriptionViewModel(
                 if (persisted.isNotEmpty()) {
                     TranscriptionRepository.persist(persisted)
                 }
+            } catch (ce: CancellationException) {
+                appendLog("Timestamp generation cancelled")
+                _uiState.update { it.copy(statusMessage = "Timestamp generation cancelled") }
             } catch (t: Throwable) {
                 appendLog("Timestamp generation failed: $t")
                 _uiState.update { it.copy(statusMessage = "Timestamp generation failed: ${t.message}") }
             } finally {
                 _uiState.update { it.copy(isTranscribing = false, progress = null) }
+                currentTranscriptionJob = null
             }
+        }
+    }
+
+    fun cancelTranscription() {
+        val job = currentTranscriptionJob
+        if (job != null) {
+            job.cancel()
+            _uiState.update { it.copy(isTranscribing = false, progress = null, statusMessage = "Transcription cancelled") }
         }
     }
 

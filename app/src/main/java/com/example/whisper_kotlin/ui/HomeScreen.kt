@@ -21,6 +21,8 @@ import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -332,19 +334,32 @@ private fun HomeBottomBar(
     isInFolder: Boolean,
     onTabSelected: (BottomTab) -> Unit
 ) {
-    NavigationBar {
+    val isDark = isSystemInDarkTheme()
+    val defaultColor = if (isDark) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else androidx.compose.ui.graphics.Color.Black
+    val selectedColor = MaterialTheme.colorScheme.primary
+
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
         bottomTabOrder.forEach { tab ->
+            val targetColor = if (activeTab == tab) selectedColor else defaultColor
+            val animatedColor by animateColorAsState(targetValue = targetColor, label = "navColor")
             NavigationBarItem(
                 icon = {
                     Icon(
                         tab.getIcon(),
                         contentDescription = tab.header,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(32.dp),
+                        tint = animatedColor
                     )
                 },
                 label = null,
                 selected = activeTab == tab,
-                onClick = { onTabSelected(tab) }
+                onClick = { onTabSelected(tab) },
+                colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                    selectedIconColor = animatedColor,
+                    unselectedIconColor = animatedColor,
+                    indicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                ),
+                interactionSource = remember { MutableInteractionSource() }
             )
         }
     }
@@ -405,6 +420,21 @@ private fun TabContent(
                 onCommandHandled = onCommandHandled,
                 onRecordingStateChanged = onRecordingStateChanged
             )
+        }
+
+        BottomTab.Chats -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Coming soon!",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = primaryTextColor
+                )
+            }
         }
 
         BottomTab.Settings -> {
