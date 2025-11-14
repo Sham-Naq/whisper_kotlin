@@ -3,37 +3,21 @@ package com.example.whisper_kotlin
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.Canvas
-import androidx.compose.material.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.ripple
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.window.PopupPositionProvider
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
+import com.example.whisper_kotlin.ui.components.ReusableDropdown
+import com.example.whisper_kotlin.ui.components.DropdownMenuItem
 
 data class ModelOption(val id: String, val fileName: String, val url: String)
 
@@ -50,153 +34,64 @@ fun ModelSelectorRow(
     onCancelDownload: () -> Unit,
 ) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    // Populate from ModelManager catalog so all supported models appear
     val options = remember {
         ModelManager.availableModels().map { spec ->
             ModelOption(id = spec.id, fileName = spec.fileName, url = spec.url)
         }
     }
-    var expanded by remember { mutableStateOf(false) }
     var localSelectedId by rememberSaveable { mutableStateOf(selectedModel?.id ?: options.firstOrNull()?.id ?: "whisper-tiny") }
 
-    // Anchor bounds in window coordinates for popup placement
-    var anchorBounds by remember { mutableStateOf(Rect.Zero) }
+    val selectedText = when {
+        downloadingId != null -> "Downloading ${downloadingId}… ${progressPct}%"
+        selectedModel != null -> selectedModel.id
+        else -> localSelectedId
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 0.dp, vertical = 0.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Title (not clickable, no outline)
-            BasicText(
-                text = "Select model",
-                style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-            )
-
-            // Current option chip (clickable, with outline and arrow)
-            Row(
-                modifier = Modifier
-                    .border(1.dp, textColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = ripple(color = Color.Gray.copy(alpha = 0.3f))
-                    ) { expanded = !expanded }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .onGloballyPositioned { coords ->
-                        anchorBounds = coords.boundsInWindow()
-                    },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BasicText(
-                    text = when {
-                        downloadingId != null -> "Downloading ${downloadingId}… ${progressPct}%"
-                        selectedModel != null -> selectedModel.id
-                        else -> localSelectedId
-                    },
-                    style = TextStyle(color = textColor)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Filled.ArrowDropDown,
-                    contentDescription = "Model options",
-                    tint = textColor
-                )
-            }
-
-            if (downloadingId != null) {
-                Spacer(Modifier.width(8.dp))
+    ReusableDropdown(
+        label = "Model",
+        selectedText = selectedText,
+        textColor = textColor,
+        isDark = isDark,
+        enabled = downloadingId == null,
+        trailingContent = if (downloadingId != null) {
+            {
                 Box(
                     modifier = Modifier
-                        .size(18.dp)
+                        .size(20.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = ripple(bounded = false, radius = 12.dp, color = Color.Gray.copy(alpha = 0.3f))
+                            indication = ripple(bounded = false, radius = 12.dp, color = textColor.copy(alpha = 0.2f))
                         ) { onCancelDownload() },
                     contentAlignment = Alignment.Center
                 ) {
                     CancelIcon(color = textColor)
                 }
             }
-        }
-
-        if (expanded) {
-            val cardBg = if (isDark) Color(0xFF232323) else Color(0xFFFFFFFF)
-            val border = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0)
-            val density = LocalDensity.current
-            val anchorSnapshot = anchorBounds
-            val verticalPaddingPx = with(density) { 6.dp.roundToPx() }
-            val popupPositionProvider = remember(anchorSnapshot, verticalPaddingPx) {
-                object : PopupPositionProvider {
-                    override fun calculatePosition(
-                        parentBounds: IntRect,
-                        windowSize: IntSize,
-                        layoutDirection: LayoutDirection,
-                        popupContentSize: IntSize
-                    ): IntOffset {
-                        if (anchorSnapshot.isEmpty) {
-                            return IntOffset.Zero
+        } else null,
+        dropdownContent = { onDismiss ->
+            options.forEach { opt ->
+                val isDownloaded = ModelManager.isModelPresent(ctx, opt.fileName)
+                DropdownMenuItem(
+                    text = opt.id,
+                    textColor = textColor,
+                    enabled = downloadingId == null,
+                    onClick = {
+                        if (isDownloaded) {
+                            localSelectedId = opt.id
+                            onSelectModel(opt)
+                            onDismiss()
+                        } else {
+                            onRequestDownload(opt)
+                            onDismiss()
                         }
-                        val rawLeft = when (layoutDirection) {
-                            LayoutDirection.Ltr -> anchorSnapshot.left.roundToInt()
-                            LayoutDirection.Rtl -> (anchorSnapshot.right - popupContentSize.width).roundToInt()
-                        }
-                        val rawTop = anchorSnapshot.bottom.roundToInt() + verticalPaddingPx
-                        val maxLeft = windowSize.width - popupContentSize.width
-                        val maxTop = windowSize.height - popupContentSize.height
-                        val clampedLeft = if (maxLeft > 0) rawLeft.coerceIn(0, maxLeft) else 0
-                        val clampedTop = if (maxTop > 0) rawTop.coerceIn(0, maxTop) else 0
-                        return IntOffset(clampedLeft, clampedTop)
-                    }
-                }
-            }
-            val anchorWidthDp = if (anchorSnapshot.isEmpty) 0.dp else with(density) { anchorSnapshot.width.toDp() }
-            val menuWidth = anchorWidthDp.coerceAtLeast(180.dp)
-            // Show as an overlay popup positioned under the anchor label
-            Popup(
-                popupPositionProvider = popupPositionProvider,
-                properties = PopupProperties(focusable = true),
-                onDismissRequest = { expanded = false }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .background(cardBg, RoundedCornerShape(10.dp))
-                        .border(1.dp, border, RoundedCornerShape(10.dp))
-                        .padding(vertical = 6.dp)
-                        .width(menuWidth)
-                ) {
-                    options.forEach { opt ->
-                        val isDownloaded = ModelManager.isModelPresent(ctx, opt.fileName)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = downloadingId == null) {
-                                    if (isDownloaded) {
-                                        localSelectedId = opt.id
-                                        onSelectModel(opt)
-                                        expanded = false
-                                    } else {
-                                        onRequestDownload(opt)
-                                    }
-                                }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            BasicText(text = opt.id, style = TextStyle(color = textColor))
-                            if (!isDownloaded) {
-                                DownloadIcon(color = textColor)
-                            }
-                        }
-                    }
-                }
+                    },
+                    trailingIcon = if (!isDownloaded) {
+                        { DownloadIcon(color = textColor) }
+                    } else null
+                )
             }
         }
-    }
+    )
 }
 
 @Composable

@@ -2,6 +2,7 @@ package com.example.whisper_kotlin.recorder
 
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -18,14 +19,17 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
@@ -34,9 +38,14 @@ import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Slider
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
+import androidx.compose.material.TextFieldDefaults
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.ripple
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
@@ -50,6 +59,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.whisper_kotlin.ActionButton
 import com.example.whisper_kotlin.AudioSource
@@ -60,6 +70,8 @@ import com.example.whisper_kotlin.TranscriptionViewModel
 import com.example.whisper_kotlin.FileSelectorRow
 import com.example.whisper_kotlin.ModelManager
 import com.example.whisper_kotlin.FolderSelectorRow
+import com.example.whisper_kotlin.ui.components.ReusableDropdown
+import com.example.whisper_kotlin.ui.components.DropdownMenuItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -95,7 +107,7 @@ fun RecorderScreen(
     var recorderPaused by rememberSaveable { mutableStateOf(false) }
     var rawFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var wavFilePath by rememberSaveable { mutableStateOf<String?>(null) }
-    var isRecordedAudio by rememberSaveable { mutableStateOf(false) } // Track if audio was recorded vs uploaded
+    var isRecordedAudio by rememberSaveable { mutableStateOf(false) }
 
     fun currentRawFile(): File? = rawFilePath?.let { File(it) }?.takeIf { it.exists() }
     fun currentWavFile(): File? = wavFilePath?.let { File(it) }?.takeIf { it.exists() }
@@ -130,7 +142,7 @@ fun RecorderScreen(
         wavFilePath = null
         isRecordedAudio = false
         currentRawFile()?.delete()
-        val newRaw = File(cacheDir, "rec_${'$'}{System.currentTimeMillis()}.pcm")
+        val newRaw = File(cacheDir, "rec_${System.currentTimeMillis()}.pcm")
         rawFilePath = newRaw.absolutePath
         recorder.start(newRaw)
         isRecording = true
@@ -175,7 +187,8 @@ fun RecorderScreen(
                 playbackProgress = 0f
             } else if (playbackPositionMs in 1 until player.duration) {
                 player.seekTo(playbackPositionMs)
-                playbackProgress = (playbackPositionMs.toFloat() / player.duration.toFloat()).coerceIn(0f, 1f)
+                playbackProgress =
+                    (playbackPositionMs.toFloat() / player.duration.toFloat()).coerceIn(0f, 1f)
             }
             lastPlayerPath = wavFilePath
         } else {
@@ -218,6 +231,7 @@ fun RecorderScreen(
                 }
                 onCommandHandled()
             }
+
             RecorderCommand.Resume -> {
                 if (isRecording) {
                     recorder.resume()
@@ -225,6 +239,7 @@ fun RecorderScreen(
                 }
                 onCommandHandled()
             }
+
             RecorderCommand.Stop -> {
                 if (isRecording) {
                     scope.launch(Dispatchers.IO) {
@@ -236,7 +251,7 @@ fun RecorderScreen(
                                 WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
                                 withContext(Dispatchers.Main) {
                                     wavFilePath = wf.absolutePath
-                                    isRecordedAudio = true // Mark as recorded audio
+                                    isRecordedAudio = true
                                     onAudioSourceChanged(AudioSource.File(wf.absolutePath))
                                 }
                                 rf.delete()
@@ -259,6 +274,7 @@ fun RecorderScreen(
                 }
                 onCommandHandled()
             }
+
             RecorderCommand.Start, null -> {
                 onCommandHandled()
             }
@@ -269,11 +285,7 @@ fun RecorderScreen(
         val filePath = (audioSource as? AudioSource.File)?.path
         val normalized = filePath?.takeIf { File(it).exists() }
         if (normalized != wavFilePath) {
-            // Only update wavFilePath if it's NOT from an uploaded file
-            // If audioSource changes to a different file, it means user uploaded a new file
-            // so we should clear the wavFilePath (recorded audio) and mark as not recorded
             if (normalized != null && wavFilePath != normalized) {
-                // This is an uploaded file, not a recorded one
                 wavFilePath = null
                 isRecordedAudio = false
             } else if (normalized == null) {
@@ -291,8 +303,12 @@ fun RecorderScreen(
         return "%d:%02d".format(minutes, seconds)
     }
 
-    val canPlayRecording = isRecordedAudio && currentWavFile() != null && mediaPlayer != null && playbackDurationMs > 0
-    val canTranscribe = !isRecording && !transcriptionUi.isTranscribing && (!isModelDownloading)
+    val canPlayRecording =
+        isRecordedAudio && currentWavFile() != null && mediaPlayer != null && playbackDurationMs > 0
+    val hasAudioSource =
+        currentWavFile() != null || (audioSource is AudioSource.File && File((audioSource as AudioSource.File).path).exists())
+    val canTranscribe =
+        !isRecording && !transcriptionUi.isTranscribing && (!isModelDownloading) && hasAudioSource
 
     fun generateDefaultTranscriptionName(): String {
         val pattern = SimpleDateFormat("yyyy-MM-dd HH.mm.ss", Locale.getDefault())
@@ -311,13 +327,11 @@ fun RecorderScreen(
     }
 
     LaunchedEffect(selectedModel) {
-        // Keep external selection in sync when coming back
         if (selectedModel != null && modelDownloadState.selectedModel?.id != selectedModel.id) {
             modelDownloadVm.selectIfPresent(context, selectedModel)
         }
     }
 
-    // Update parent's selectedModel when download completes
     LaunchedEffect(modelDownloadState.selectedModel) {
         val downloadedModel = modelDownloadState.selectedModel
         if (downloadedModel != null && downloadedModel.id != selectedModel?.id) {
@@ -325,350 +339,562 @@ fun RecorderScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(focusManager) {
-                detectTapGestures(onTap = { focusManager.clearFocus() })
-            }
-            .padding(16.dp)
-    ) {
-        val dialogBackground = MaterialTheme.colorScheme.surface
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .background(selectorButtonBg, RoundedCornerShape(8.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = ripple(color = Color.Gray.copy(alpha = 0.3f))
-                    ) {
-                        transcriptionName = generateDefaultTranscriptionName()
-                    }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                androidx.compose.foundation.text.BasicText(
-                    text = "Name",
-                    style = TextStyle(color = textColor, fontWeight = FontWeight.Medium)
-                )
-            }
-            OutlinedTextField(
-                value = transcriptionName,
-                onValueChange = { transcriptionName = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                textStyle = TextStyle(color = textColor)
-            )
-        }
+    // Track transcription state
+    var showTranscriptionComplete by remember { mutableStateOf(false) }
 
-        ModelSelectorRow(
-            textColor = textColor,
-            isDark = isDark,
-            buttonBg = selectorButtonBg,
-            selectedModel = modelDownloadState.selectedModel ?: selectedModel,
-            downloadingId = modelDownloadState.downloadingId,
-            progressPct = modelDownloadState.progressPct,
-            onSelectModel = {
-                onSelectModel(it)
-                modelDownloadVm.selectIfPresent(context, it)
-            },
-            onRequestDownload = { opt ->
-                onModelDownloadingChanged(true)
-                modelDownloadVm.startDownloadOrSelect(context, opt)
-            },
-            onCancelDownload = {
-                modelDownloadVm.cancelDownload()
-                onModelDownloadingChanged(false)
-            }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Target folder selection
-        FolderSelectorRow(
-            textColor = textColor,
-            isDark = isDark,
-            buttonBg = selectorButtonBg,
-            folders = allFolders,
-            selectedFolderId = selectedFolderId,
-            onFolderSelected = { selectedFolderId = it }
-        )
-
-        if (isRecording) {
-            Spacer(modifier = Modifier.height(8.dp))
-            LineBarWaveform(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                bars = bars,
-                color = MaterialTheme.colorScheme.primary,
-                backgroundColor = null
-            )
-        }
-
-        if (!isRecording) {
-            Spacer(modifier = Modifier.height(16.dp))
-            when {
-                canPlayRecording -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, textColor.copy(alpha = 0.2f), CircleShape)
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
-                                    .clickable(
-                                        enabled = canPlayRecording,
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = ripple(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.3f), bounded = true)
-                                    ) {
-                                        val player = mediaPlayer
-                                        if (player != null) {
-                                            if (isPlaying) {
-                                                player.pause()
-                                                isPlaying = false
-                                            } else {
-                                                player.start()
-                                                isPlaying = true
-                                            }
-                                        }
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    contentDescription = if (isPlaying) "Pause playback" else "Play recording",
-                                    tint = Color.White
-                                )
-                            }
-                            //Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Slider(
-                                    value = playbackProgress,
-                                    onValueChange = { value ->
-                                        playbackProgress = value
-                                        val player = mediaPlayer
-                                        if (player != null && playbackDurationMs > 0) {
-                                            val target = (value * playbackDurationMs).toInt().coerceIn(0, playbackDurationMs)
-                                            player.seekTo(target)
-                                            playbackPositionMs = target
-                                        }
-                                    },
-                                    valueRange = 0f..1f,
-                                    enabled = canPlayRecording
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    androidx.compose.foundation.text.BasicText(
-                                        text = formatTime(playbackPositionMs),
-                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
-                                    )
-                                    androidx.compose.foundation.text.BasicText(
-                                        text = formatTime(playbackDurationMs),
-                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                else -> {
-                    FileSelectorRow(
-                        textColor = textColor,
-                        isDark = isDark,
-                        buttonBg = MaterialTheme.colorScheme.surfaceVariant,
-                        source = audioSource,
-                        onSourceChanged = onAudioSourceChanged
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val recordedFile = currentWavFile()
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ActionButton(
-                label = if (recordedFile != null) "Transcribe recording" else "Transcribe file",
-                color = textColor,
-                enabled = canTranscribe
-            ) {
-                val source = if (recordedFile != null) {
-                    AudioSource.File(recordedFile.absolutePath)
-                } else {
-                    audioSource
-                }
-                // Use the downloaded model if available, otherwise fall back to selectedModel
+    // Auto-start transcription when recording stops
+    LaunchedEffect(isRecording, wavFilePath) {
+        if (!isRecording && wavFilePath != null && !showTranscriptionComplete && !transcriptionUi.isTranscribing) {
+            // Start transcription automatically when recording stops
+            val recordedFile = currentWavFile()
+            if (recordedFile != null) {
                 val modelToUse = modelDownloadState.selectedModel ?: selectedModel
                 transcriptionViewModel.startTranscription(
                     context = context,
                     selectedModel = modelToUse,
-                    audioSource = source,
+                    audioSource = AudioSource.File(recordedFile.absolutePath),
                     isModelDownloading = isModelDownloading,
                     transcriptionName = transcriptionName,
                     targetFolderId = selectedFolderId
                 )
             }
-
-            if (recordedFile != null) {
-                ActionButton(
-                    label = "Delete recording",
-                    color = textColor
-                ) {
-                    isPlaying = false
-                    releasePlayer()
-                    recordedFile.delete()
-                    currentRawFile()?.delete()
-                    wavFilePath = null
-                    rawFilePath = null
-                    isRecordedAudio = false // Reset the flag when deleting recording
-                    onAudioSourceChanged(AudioSource.Asset("samples/samples_jfk.wav"))
-                }
-            }
-
-            ActionButton(
-                label = "Delete model",
-                color = textColor,
-                enabled = !transcriptionUi.isTranscribing && selectedModel != null
-            ) {
-                showDeleteModelDialog = true
-            }
         }
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
+    // Reset transcription complete state when starting a new recording
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            showTranscriptionComplete = false
+        }
+    }
 
-        // Recording buttons - fixed position
-        // Shows red record button when not recording, pause/stop buttons when recording
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+    // Show transcription complete when transcription finishes
+    LaunchedEffect(transcriptionUi.isTranscribing) {
+        if (!transcriptionUi.isTranscribing && wavFilePath != null && !isRecording) {
+            showTranscriptionComplete = true
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .pointerInput(focusManager) {
+                detectTapGestures(onTap = { focusManager.clearFocus() })
+            }
+            .padding(horizontal = 16.dp, vertical = 16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(top = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (isRecording) {
-                // Pause/Resume button
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+            // Show different content based on state
+            when {
+                // Recording state: Show visualizer
+                isRecording -> {
                     Box(
                         modifier = Modifier
-                            .size(64.dp)
-                            .background(MaterialTheme.colorScheme.tertiary, CircleShape)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                if (recorderPaused) {
-                                    recorder.resume()
-                                    recorderPaused = false
-                                } else {
-                                    recorder.pause()
-                                    recorderPaused = true
-                                }
-                            },
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                RoundedCornerShape(16.dp)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (recorderPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                            contentDescription = if (recorderPaused) "Resume" else "Pause",
-                            tint = Color.White,
-                            modifier = Modifier.size(32.dp)
+                        if (recorderPaused) {
+                            Text(
+                                text = "Recording Paused",
+                                color = textColor.copy(alpha = 0.5f),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        } else {
+                            LineBarWaveform(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                bars = bars,
+                                color = MaterialTheme.colorScheme.primary,
+                                backgroundColor = null
+                            )
+                        }
+                    }
+                }
+                // Transcribing state: Show loading
+                transcriptionUi.isTranscribing -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(60.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 4.dp
+                        )
+                        Text(
+                            text = "Transcribing...",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = textColor
                         )
                     }
-                    androidx.compose.foundation.text.BasicText(
-                        text = if (recorderPaused) "Resume" else "Pause",
-                        style = TextStyle(color = textColor, fontWeight = FontWeight.Medium)
-                    )
                 }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                // Stop button
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .background(MaterialTheme.colorScheme.error, CircleShape)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        recorder.stop()
-                                        val rf = currentRawFile()
-                                        if (rf != null && rf.exists() && rf.length() > 0) {
-                                            val wf = File(cacheDir, rf.nameWithoutExtension + ".wav")
-                                            WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
-                                            withContext(Dispatchers.Main) {
-                                                wavFilePath = wf.absolutePath
-                                                isRecordedAudio = true // Mark as recorded audio
-                                                onAudioSourceChanged(AudioSource.File(wf.absolutePath))
-                                            }
-                                            rf.delete()
-                                            rawFilePath = null
-                                        } else {
-                                            withContext(Dispatchers.Main) {
-                                                wavFilePath = null
-                                                isRecordedAudio = false
-                                                rawFilePath = null
-                                            }
-                                        }
-                                    } finally {
-                                        withContext(Dispatchers.Main) {
-                                            isRecording = false
-                                            recorderPaused = false
-                                            onRecordingStateChanged(false)
-                                        }
-                                    }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
+                // Transcription complete state: Show success message
+                showTranscriptionComplete -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
+                        Text(
+                            text = "Transcription Saved",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                // Reset to default state
+                                showTranscriptionComplete = false
+                                wavFilePath = null
+                                rawFilePath = null
+                                isRecordedAudio = false
+                                transcriptionName = generateDefaultTranscriptionName()
+                                releasePlayer()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "Finish",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+                // Default state: Show logo, instructions, and options
+                else -> {
+                    // Logo and instructions
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Blue circular logo with mic icon
                         Box(
                             modifier = Modifier
-                                .size(20.dp)
-                                .background(Color.White, RoundedCornerShape(3.dp))
+                                .size(70.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Outlined.Mic,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        // "Ready to Record" title
+                        Text(
+                            text = "Ready to Record",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+
+                        // Instructions
+                        Text(
+                            text = "Configure your recording settings below",
+                            fontSize = 13.sp,
+                            color = textColor.copy(alpha = 0.6f)
                         )
                     }
-                    androidx.compose.foundation.text.BasicText(
-                        text = "Stop",
-                        style = TextStyle(color = textColor, fontWeight = FontWeight.Medium)
-                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Options card
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7),
+                                RoundedCornerShape(16.dp)
+                            )
+                    ) {
+                        // Recording Name
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Outlined.Mic,
+                                contentDescription = null,
+                                tint = textColor.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .offset(y = 1.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedTextField(
+                                value = transcriptionName,
+                                onValueChange = { transcriptionName = it },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                textStyle = TextStyle(color = textColor, fontSize = 15.sp),
+                                placeholder = {
+                                    Text(
+                                        text = "Recording Name",
+                                        color = textColor.copy(alpha = 0.4f),
+                                        fontSize = 15.sp
+                                    )
+                                },
+                                colors = TextFieldDefaults.outlinedTextFieldColors(
+                                    focusedBorderColor = Color.Transparent,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    cursorColor = MaterialTheme.colorScheme.primary,
+                                    backgroundColor = Color.Transparent
+                                )
+                            )
+                            androidx.compose.material3.IconButton(
+                                onClick = {
+                                    transcriptionName = generateDefaultTranscriptionName()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.AccessTime,
+                                    contentDescription = "Generate timestamp",
+                                    tint = textColor.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Divider
+                        androidx.compose.material3.Divider(
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                            color = textColor.copy(alpha = 0.1f),
+                            thickness = 0.5.dp
+                        )
+
+                        // Speech Model
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = modelDownloadState.downloadingId == null) {
+                                    // Expand dropdown
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Outlined.Language,
+                                contentDescription = null,
+                                tint = textColor.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .offset(y = 1.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            ReusableDropdown(
+                                label = "",
+                                selectedText = when {
+                                    modelDownloadState.downloadingId != null -> "Downloading ${modelDownloadState.downloadingId}… ${modelDownloadState.progressPct}%"
+                                    modelDownloadState.selectedModel != null -> "${modelDownloadState.selectedModel!!.id}"
+                                    selectedModel != null -> "${selectedModel.id}"
+                                    else -> "tiny"
+                                },
+                                textColor = textColor,
+                                isDark = isDark,
+                                modifier = Modifier.weight(1f),
+                                enabled = modelDownloadState.downloadingId == null
+                            ) { closeMenu ->
+                                val options = remember {
+                                    ModelManager.availableModels().map { spec ->
+                                        ModelOption(
+                                            id = spec.id,
+                                            fileName = spec.fileName,
+                                            url = spec.url
+                                        )
+                                    }
+                                }
+
+                                options.forEach { opt ->
+                                    val isDownloaded =
+                                        ModelManager.isModelPresent(context, opt.fileName)
+                                    DropdownMenuItem(
+                                        text = opt.id,
+                                        textColor = textColor,
+                                        onClick = {
+                                            if (isDownloaded) {
+                                                onSelectModel(opt)
+                                                modelDownloadVm.selectIfPresent(context, opt)
+                                                closeMenu()
+                                            } else {
+                                                onModelDownloadingChanged(true)
+                                                modelDownloadVm.startDownloadOrSelect(context, opt)
+                                                closeMenu()
+                                            }
+                                        },
+                                        enabled = modelDownloadState.downloadingId == null,
+                                        trailingIcon = {
+                                            if (isDownloaded) {
+                                                Icon(
+                                                    imageVector = androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                                                    contentDescription = "Downloaded",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = androidx.compose.material.icons.Icons.Filled.AccessTime,
+                                                    contentDescription = "Not downloaded",
+                                                    tint = textColor.copy(alpha = 0.4f),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Divider
+                        androidx.compose.material3.Divider(
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                            color = textColor.copy(alpha = 0.1f),
+                            thickness = 0.5.dp
+                        )
+
+                        // Save to Folder
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Outlined.Home,
+                                contentDescription = null,
+                                tint = textColor.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .offset(y = 1.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            ReusableDropdown(
+                                label = "",
+                                selectedText = selectedFolderId?.let { id ->
+                                    allFolders.firstOrNull { it.id == id }?.name
+                                } ?: "All Recordings",
+                                textColor = textColor,
+                                isDark = isDark,
+                                modifier = Modifier.weight(1f),
+                                enabled = true
+                            ) { closeMenu ->
+                                val childrenByParent = allFolders.groupBy { it.parentId }
+
+                                @Composable
+                                fun renderItem(indent: Int, id: Long?, name: String) {
+                                    val prefix =
+                                        if (indent > 0) ("  ".repeat(indent) + "• ") else ""
+                                    DropdownMenuItem(
+                                        text = prefix + name,
+                                        textColor = textColor,
+                                        onClick = {
+                                            selectedFolderId = id
+                                            closeMenu()
+                                        },
+                                        enabled = true
+                                    )
+                                }
+
+                                @Composable
+                                fun traverse(parentId: Long?, indent: Int) {
+                                    val children = childrenByParent[parentId].orEmpty()
+                                        .sortedBy { it.name.lowercase() }
+                                    for (child in children) {
+                                        renderItem(indent, child.id, child.name)
+                                        traverse(child.id, indent + 1)
+                                    }
+                                }
+
+                                renderItem(0, null, "All Recordings")
+                                traverse(parentId = null, indent = 0)
+                            }
+                        }
+
+                        /* Commented out: Upload Audio File button
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                            if (uri != null) {
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val cachedDir = File(context.cacheDir, "uploads").apply { mkdirs() }
+                                        val name = runCatching {
+                                            val c = context.contentResolver.query(
+                                                uri,
+                                                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                                                null, null, null
+                                            )
+                                            c?.use { if (it.moveToFirst()) it.getString(0) else null }
+                                        }.getOrNull() ?: ("upload_" + System.currentTimeMillis() + ".wav")
+
+                                        val target = File(cachedDir, name)
+                                        context.contentResolver.openInputStream(uri)?.use { ins ->
+                                            target.outputStream().use { outs -> ins.copyTo(outs) }
+                                        }
+
+                                        withContext(Dispatchers.Main) {
+                                            onAudioSourceChanged(AudioSource.File(target.absolutePath))
+                                        }
+                                    } catch (_: Throwable) {
+                                    }
+                                }
+                            }
+                        }
+
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { launcher.launch("audio") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                                    contentDescription = "Upload",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = textColor
+                                )
+                                Text(
+                                    text = "Upload Audio File",
+                                    fontSize = 15.sp,
+                                    color = textColor
+                                )
+                            }
+                        } */
+
+                    }
                 }
-            } else {
-                // Record button
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+            }
+
+            // Bottom section - Record button
+            Column(
+                modifier = Modifier
+                    .padding(bottom = 16.dp, top = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (isRecording) {
+                    // Show Pause and Stop buttons when recording
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Pause/Resume button
+                        Box(
+                            modifier = Modifier
+                                .size(70.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    if (recorderPaused) {
+                                        recorder.resume()
+                                        recorderPaused = false
+                                    } else {
+                                        recorder.pause()
+                                        recorderPaused = true
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (recorderPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (recorderPaused) "Resume" else "Pause",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        // Stop button
+                        Box(
+                            modifier = Modifier
+                                .size(70.dp)
+                                .background(
+                                    color = Color(0xFFD32F2F),
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            recorder.stop()
+                                            val rf = currentRawFile()
+                                            if (rf != null && rf.exists() && rf.length() > 0) {
+                                                val wf =
+                                                    File(cacheDir, rf.nameWithoutExtension + ".wav")
+                                                WavWriter16kMonoPcm16.wrapRawPcmToWav(rf, wf)
+                                                withContext(Dispatchers.Main) {
+                                                    wavFilePath = wf.absolutePath
+                                                    isRecordedAudio = true
+                                                    onAudioSourceChanged(AudioSource.File(wf.absolutePath))
+                                                }
+                                                rf.delete()
+                                                rawFilePath = null
+                                            } else {
+                                                withContext(Dispatchers.Main) {
+                                                    wavFilePath = null
+                                                    isRecordedAudio = false
+                                                    rawFilePath = null
+                                                }
+                                            }
+                                        } finally {
+                                            withContext(Dispatchers.Main) {
+                                                isRecording = false
+                                                recorderPaused = false
+                                                onRecordingStateChanged(false)
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(Color.White, RoundedCornerShape(4.dp))
+                            )
+                        }
+                    }
+                } else if (!showTranscriptionComplete && !transcriptionUi.isTranscribing) {
+                    // Show red record button when not recording and not transcribing
                     Box(
                         modifier = Modifier
-                            .size(64.dp)
-                            .background(Color(0xFFDC143C), CircleShape)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
+                            .size(80.dp)
+                            .background(
+                                color = Color(0xFFFF3B30),
+                                shape = CircleShape
+                            )
+                            .clickable {
                                 val hasPermission = ContextCompat.checkSelfPermission(
                                     context,
                                     android.Manifest.permission.RECORD_AUDIO
@@ -681,62 +907,70 @@ fun RecorderScreen(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Empty content - button is just a colored circle
+                        // Empty - just red circle without icon
                     }
-                    androidx.compose.foundation.text.BasicText(
-                        text = "Record",
-                        style = TextStyle(color = textColor, fontWeight = FontWeight.Medium)
+                }
+
+                // Status message
+                transcriptionUi.statusMessage?.let { message ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = message,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            /* Commented out: Old bottom section with separate transcribe/delete/playback controls
+            This has been replaced with the new iOS-inspired workflow:
+            - Auto-transcription on recording stop
+            - State-based UI transitions
+            - Simplified record button design
+            */
 
-        if (showDeleteModelDialog) {
-            AlertDialog(
-                onDismissRequest = { showDeleteModelDialog = false },
-                backgroundColor = dialogBackground,
-                contentColor = textColor,
-                title = {
-                    Text("Delete model?", color = textColor, fontWeight = FontWeight.SemiBold)
-                },
-                text = {
-                    val modelName = selectedModel?.id ?: "this model"
-                    Text(
-                        "This will remove $modelName from local storage. You'll need to download it again to use it later.",
-                        color = textColor.copy(alpha = 0.85f)
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showDeleteModelDialog = false
-                        val fallbackSpec = ModelManager.defaultModel()
-                        transcriptionViewModel.deleteModel(context, selectedModel)
-                        if (selectedModel != null && fallbackSpec != null) {
-                            val fallbackOption = ModelOption(fallbackSpec.id, fallbackSpec.fileName, fallbackSpec.url)
-                            onSelectModel(fallbackOption)
-                            modelDownloadVm.setSelectedModel(fallbackOption)
+            // Delete model dialog (keep existing)
+            if (showDeleteModelDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteModelDialog = false },
+                    backgroundColor = MaterialTheme.colorScheme.surface,
+                    contentColor = textColor,
+                    title = {
+                        Text("Delete model?", color = textColor, fontWeight = FontWeight.SemiBold)
+                    },
+                    text = {
+                        val modelName = selectedModel?.id ?: "this model"
+                        Text(
+                            "This will remove $modelName.",
+                            color = textColor.copy(alpha = 0.85f)
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showDeleteModelDialog = false
+                            val fallbackSpec = ModelManager.defaultModel()
+                            transcriptionViewModel.deleteModel(context, selectedModel)
+                            if (selectedModel != null && fallbackSpec != null) {
+                                val fallbackOption = ModelOption(
+                                    fallbackSpec.id,
+                                    fallbackSpec.fileName,
+                                    fallbackSpec.url
+                                )
+                                onSelectModel(fallbackOption)
+                                modelDownloadVm.setSelectedModel(fallbackOption)
+                            }
+                        }) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
                         }
-                    }) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteModelDialog = false }) {
+                            Text("Cancel")
+                        }
                     }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteModelDialog = false }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        transcriptionUi.statusMessage?.let { message ->
-            androidx.compose.foundation.text.BasicText(
-                text = message,
-                style = TextStyle(color = textColor.copy(alpha = 0.8f), fontWeight = FontWeight.Medium)
-            )
+                )
+            }
         }
     }
 }
-
 

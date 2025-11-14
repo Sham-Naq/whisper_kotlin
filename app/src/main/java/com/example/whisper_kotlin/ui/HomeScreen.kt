@@ -80,7 +80,8 @@ fun HomeScreen() {
 
     val transcriptionViewModel: TranscriptionViewModel = viewModel()
 
-    var selectedModel by remember { mutableStateOf<ModelOption?>(null) }
+    val selectedModelState = remember { mutableStateOf<ModelOption?>(null) }
+    val selectedModel by selectedModelState
     var audioSource by remember { mutableStateOf<AudioSource>(AudioSource.Asset("samples/samples_jfk.wav")) }
     var isModelDownloading by remember { mutableStateOf(false) }
 
@@ -229,7 +230,7 @@ fun HomeScreen() {
                         isDark = isDark,
                         transcriptionViewModel = transcriptionViewModel,
                         selectedModel = selectedModel,
-                        onSelectModel = { selectedModel = it },
+                        onSelectModel = { model -> selectedModelState.value = model },
                         isModelDownloading = isModelDownloading,
                         onModelDownloadingChanged = { isModelDownloading = it },
                         audioSource = audioSource,
@@ -411,7 +412,10 @@ private fun TabContent(
                 modifier = Modifier.fillMaxSize(),
                 textColor = primaryTextColor,
                 themePreference = themePreference,
-                onThemePreferenceChange = onThemePreferenceChange
+                onThemePreferenceChange = onThemePreferenceChange,
+                selectedModel = selectedModel,
+                transcriptionViewModel = transcriptionViewModel,
+                onSelectModel = onSelectModel
             )
         }
     }
