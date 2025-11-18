@@ -275,7 +275,7 @@ fun TranscriptionDetailScreen(
                     .weight(1f, fill = true),
                 shape = RoundedCornerShape(cornerRadius + 12.dp),
                 backgroundColor = transcriptCardBackground,
-                elevation = 6.dp,
+                elevation = 4.dp,
                 border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 LazyColumn(

@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.whisper_kotlin.AudioSource
 import com.example.whisper_kotlin.ModelOption
@@ -62,11 +63,12 @@ import kotlin.math.abs
     ExperimentalMaterial3Api::class
 )
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    themePreference: ThemePreference,
+    onThemePreferenceChange: (ThemePreference) -> Unit
+) {
     var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
     var detailEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var themeSelection by rememberSaveable { mutableStateOf(ThemePreference.System.name) }
-    val themePreference = remember(themeSelection) { ThemePreference.valueOf(themeSelection) }
 
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themePreference) {
@@ -147,6 +149,7 @@ fun HomeScreen() {
                     isInFolder = isInFolder,
                     activeTab = activeTab,
                     currentFolder = currentFolder,
+                    isDark = isDark,
                     onBackClick = { detailEntryId = null },
                     onFolderBackClick = {
                         val parentId = currentFolder?.parentId
@@ -161,6 +164,7 @@ fun HomeScreen() {
                     HomeBottomBar(
                         activeTab = activeTab,
                         isInFolder = isInFolder,
+                        isDark = isDark,
                         onTabSelected = { tab ->
                             detailEntryId = null
                             activeTab = tab
@@ -246,7 +250,7 @@ fun HomeScreen() {
                             }
                         },
                         themePreference = themePreference,
-                        onThemePreferenceChange = { themeSelection = it.name },
+                        onThemePreferenceChange = onThemePreferenceChange,
                         onOpenTranscription = { id ->
                             activeTab = BottomTab.Transcription
                             detailEntryId = id
@@ -286,10 +290,13 @@ private fun HomeTopBar(
     isInFolder: Boolean,
     activeTab: BottomTab,
     currentFolder: Folder?,
+    isDark: Boolean,
     onBackClick: () -> Unit,
     onFolderBackClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    val topBarColor = if (isDark) androidx.compose.ui.graphics.Color(0xFF2C2C2E) else MaterialTheme.colorScheme.surfaceVariant
+
     CenterAlignedTopAppBar(
         title = {
             Text(
@@ -297,6 +304,9 @@ private fun HomeTopBar(
                 style = MaterialTheme.typography.titleMedium
             )
         },
+        colors = androidx.compose.material3.TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = topBarColor
+        ),
         modifier = Modifier.height(64.dp),
         navigationIcon = {
             if (detailEntry != null) {
@@ -332,28 +342,47 @@ private fun HomeTopBar(
 private fun HomeBottomBar(
     activeTab: BottomTab,
     isInFolder: Boolean,
+    isDark: Boolean,
     onTabSelected: (BottomTab) -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
     val defaultColor = if (isDark) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else androidx.compose.ui.graphics.Color.Black
     val selectedColor = MaterialTheme.colorScheme.primary
 
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
+    val navContainerColor = if (isDark) androidx.compose.ui.graphics.Color(0xFF2C2C2E) else MaterialTheme.colorScheme.surfaceVariant
+
+    NavigationBar(
+        containerColor = navContainerColor,
+        modifier = Modifier.height(64.dp),
+        tonalElevation = 0.dp
+    ) {
         bottomTabOrder.forEach { tab ->
             val targetColor = if (activeTab == tab) selectedColor else defaultColor
             val animatedColor by animateColorAsState(targetValue = targetColor, label = "navColor")
+            val isSelected = activeTab == tab
             NavigationBarItem(
                 icon = {
-                    Icon(
-                        tab.getIcon(),
-                        contentDescription = tab.header,
-                        modifier = Modifier.size(32.dp),
-                        tint = animatedColor
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        Icon(
+                            tab.icon(isSelected),
+                            contentDescription = tab.header,
+                            modifier = Modifier.size(32.dp),
+                            tint = animatedColor
+                        )
+                        Text(
+                            text = tab.header,
+                            color = animatedColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 },
-                label = null,
-                selected = activeTab == tab,
+                selected = isSelected,
                 onClick = { onTabSelected(tab) },
+                label = null,
                 colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
                     selectedIconColor = animatedColor,
                     unselectedIconColor = animatedColor,

@@ -2,9 +2,11 @@ package com.example.whisper_kotlin
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -30,6 +32,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -108,6 +111,17 @@ fun TranscriptionScreen(
     var selectedFolderIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var selectedTranscriptionIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelectionDialog by remember { mutableStateOf(false) }
+    val folderDepthResolver: (Long?) -> Int = remember(uiState.folders) {
+        val folderMap = uiState.folders.associateBy { it.id }
+        val cache = mutableMapOf<Long?, Int>().apply { put(null, 0) }
+        fun depthFor(id: Long?): Int {
+            return cache.getOrPut(id) {
+                val folder = folderMap[id]
+                if (folder == null) 0 else depthFor(folder.parentId) + 1
+            }
+        }
+        { id -> depthFor(id) }
+    }
     
     Box(modifier = modifier) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -183,28 +197,30 @@ fun TranscriptionScreen(
                 targetState = uiState.currentFolderId,
                 modifier = Modifier.fillMaxWidth(),
                 transitionSpec = {
-                    // Determine direction: going deeper (right to left) or backing out (left to right)
-                    val isGoingDeeper = targetState != null && (initialState == null || targetState != initialState)
-                    val isBackingOut = targetState == null || (initialState != null && targetState == null)
-                    
-                    if (isBackingOut) {
-                        // Going back: slide in from left, slide out to right
-                        slideInHorizontally(
-                            animationSpec = tween(300),
-                            initialOffsetX = { fullWidth -> -fullWidth }
-                        ) togetherWith slideOutHorizontally(
-                            animationSpec = tween(300),
-                            targetOffsetX = { fullWidth -> fullWidth }
-                        )
-                    } else {
-                        // Going deeper: slide in from right, slide out to left
-                        slideInHorizontally(
-                            animationSpec = tween(300),
-                            initialOffsetX = { fullWidth -> fullWidth }
-                        ) togetherWith slideOutHorizontally(
-                            animationSpec = tween(300),
-                            targetOffsetX = { fullWidth -> -fullWidth }
-                        )
+                    val initialDepth = folderDepthResolver(initialState)
+                    val targetDepth = folderDepthResolver(targetState)
+                    when {
+                        targetDepth > initialDepth -> {
+                            slideInHorizontally(
+                                animationSpec = tween(300),
+                                initialOffsetX = { fullWidth -> fullWidth }
+                            ) togetherWith slideOutHorizontally(
+                                animationSpec = tween(300),
+                                targetOffsetX = { fullWidth -> -fullWidth }
+                            )
+                        }
+                        targetDepth < initialDepth -> {
+                            slideInHorizontally(
+                                animationSpec = tween(300),
+                                initialOffsetX = { fullWidth -> -fullWidth }
+                            ) togetherWith slideOutHorizontally(
+                                animationSpec = tween(300),
+                                targetOffsetX = { fullWidth -> fullWidth }
+                            )
+                        }
+                        else -> {
+                            fadeIn(tween(200)) togetherWith fadeOut(tween(200))
+                        }
                     }
                 },
                 label = "folderAnimation"
@@ -559,7 +575,7 @@ private fun RecordingItem(
         
         Spacer(modifier = Modifier.padding(horizontal = 8.dp))
         
-        // Content
+         // Content
         Column(
             modifier = Modifier.weight(1f)
         ) {

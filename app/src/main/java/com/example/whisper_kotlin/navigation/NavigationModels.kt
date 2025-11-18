@@ -1,27 +1,56 @@
 package com.example.whisper_kotlin.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MicNone
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 
-enum class BottomTab(val route: String, val header: String) {
-    Recents(route = "recents", header = "Recents"),
-    Transcription(route = "transcription", header = "Transcription"),
-    Recorder(route = "recorder", header = "Recorder"),
-    Chats(route = "chats", header = "Chats"),
-    Settings(route = "settings", header = "Settings");
+enum class BottomTab(
+    val route: String,
+    val header: String,
+    private val filledIcon: ImageVector,
+    private val outlinedIcon: ImageVector
+) {
+    Recents(
+        route = "recents",
+        header = "Recents",
+        filledIcon = Icons.Filled.History,
+        outlinedIcon = Icons.Outlined.History
+    ),
+    Transcription(
+        route = "transcription",
+        header = "Files",
+        filledIcon = Icons.Filled.Folder,
+        outlinedIcon = Icons.Outlined.Folder
+    ),
+    Recorder(
+        route = "recorder",
+        header = "Recorder",
+        filledIcon = Icons.Filled.Mic,
+        outlinedIcon = Icons.Outlined.MicNone
+    ),
+    Chats(
+        route = "chats",
+        header = "Chats",
+        filledIcon = Icons.Filled.Chat,
+        outlinedIcon = Icons.Outlined.Chat
+    ),
+    Settings(
+        route = "settings",
+        header = "Settings",
+        filledIcon = Icons.Filled.Settings,
+        outlinedIcon = Icons.Outlined.Settings
+    );
 
-    fun getIcon(): ImageVector = when (this) {
-        Recents -> Icons.Filled.AccessTime
-        Transcription -> Icons.Filled.Folder
-        Recorder -> Icons.Filled.Mic
-        Chats -> Icons.Filled.Chat
-        Settings -> Icons.Filled.Settings
-    }
+    fun icon(isSelected: Boolean): ImageVector = if (isSelected) filledIcon else outlinedIcon
 }
 
 enum class ThemePreference {
