@@ -98,7 +98,8 @@ fun RecorderScreen(
     transcriptionViewModel: TranscriptionViewModel,
     command: RecorderCommand? = null,
     onCommandHandled: () -> Unit = {},
-    onRecordingStateChanged: (Boolean) -> Unit = {}
+    onRecordingStateChanged: (Boolean) -> Unit = {},
+    onViewTranscription: (Long) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -320,6 +321,18 @@ fun RecorderScreen(
 
     val selectorButtonBg = MaterialTheme.colorScheme.surfaceVariant
 
+    // Track transcription state
+    var showTranscriptionComplete by remember { mutableStateOf(false) }
+
+    fun resetAfterTranscription() {
+        showTranscriptionComplete = false
+        wavFilePath = null
+        rawFilePath = null
+        isRecordedAudio = false
+        transcriptionName = generateDefaultTranscriptionName()
+        releasePlayer()
+    }
+
     val modelDownloadVm: ModelDownloadViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val modelDownloadState by modelDownloadVm.uiState.collectAsState()
 
@@ -339,9 +352,6 @@ fun RecorderScreen(
             onSelectModel(downloadedModel)
         }
     }
-
-    // Track transcription state
-    var showTranscriptionComplete by remember { mutableStateOf(false) }
 
     // Auto-start transcription when recording stops
     LaunchedEffect(isRecording, wavFilePath) {
@@ -499,25 +509,38 @@ fun RecorderScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            androidx.compose.material3.Button(
-                                onClick = {
-                                    // Reset to default state
-                                    showTranscriptionComplete = false
-                                    wavFilePath = null
-                                    rawFilePath = null
-                                    isRecordedAudio = false
-                                    transcriptionName = generateDefaultTranscriptionName()
-                                    releasePlayer()
-                                },
+                            val latestEntryId = transcriptionUi.savedTranscriptions.firstOrNull()?.id
+                            if (latestEntryId != null) {
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = {
+                                        resetAfterTranscription()
+                                        onViewTranscription(latestEntryId)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = "View transcription",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = { resetAfterTranscription() },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(50.dp),
+                                    .height(48.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 Text(
                                     text = "Finish",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }

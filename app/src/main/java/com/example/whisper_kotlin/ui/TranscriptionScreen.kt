@@ -58,7 +58,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material.Checkbox
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
@@ -462,7 +462,7 @@ fun TranscriptionScreen(
             containerColor = MaterialTheme.colorScheme.primary
         ) {
             Icon(
-                imageVector = Icons.Filled.Add,
+                imageVector = Icons.Filled.CreateNewFolder,
                 contentDescription = "Add new folder",
                 tint = MaterialTheme.colorScheme.onPrimary
             )

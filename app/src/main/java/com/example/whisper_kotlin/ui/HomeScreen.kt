@@ -70,6 +70,9 @@ fun HomeScreen(
     var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
     var detailEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
 
+    val disabledTabs = remember { setOf(BottomTab.Chats) }
+    val swipeableTabs = remember(disabledTabs) { bottomTabOrder.filterNot { it in disabledTabs } }
+
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themePreference) {
         ThemePreference.System -> systemDark
@@ -165,12 +168,15 @@ fun HomeScreen(
                         activeTab = activeTab,
                         isInFolder = isInFolder,
                         isDark = isDark,
+                        disabledTabs = disabledTabs,
                         onTabSelected = { tab ->
-                            detailEntryId = null
-                            activeTab = tab
-                            // When clicking Transcription tab while in a folder, go to root
-                            if (tab == BottomTab.Transcription && isInFolder) {
-                                transcriptionViewModel.navigateToFolder(null)
+                            if (tab !in disabledTabs) {
+                                detailEntryId = null
+                                activeTab = tab
+                                // When clicking Transcription tab while in a folder, go to root
+                                if (tab == BottomTab.Transcription && isInFolder) {
+                                    transcriptionViewModel.navigateToFolder(null)
+                                }
                             }
                         }
                     )
@@ -192,11 +198,11 @@ fun HomeScreen(
                                     onDragEnd = {
                                         if (abs(cumulativeDragX) >= swipeThresholdPx) {
                                             val currentIndex =
-                                                bottomTabOrder.indexOf(activeTab).coerceAtLeast(0)
+                                                swipeableTabs.indexOf(activeTab).coerceAtLeast(0)
                                             val target = if (cumulativeDragX > 0f) {
-                                                bottomTabOrder.getOrNull(currentIndex - 1)
+                                                swipeableTabs.getOrNull(currentIndex - 1)
                                             } else {
-                                                bottomTabOrder.getOrNull(currentIndex + 1)
+                                                swipeableTabs.getOrNull(currentIndex + 1)
                                             }
                                             if (target != null) {
                                                 detailEntryId = null
@@ -213,9 +219,9 @@ fun HomeScreen(
                     targetState = activeTab,
                     transitionSpec = {
                         val initialIndex =
-                            bottomTabOrder.indexOf(initialState).takeIf { it >= 0 } ?: 0
+                            swipeableTabs.indexOf(initialState).takeIf { it >= 0 } ?: 0
                         val targetIndex =
-                            bottomTabOrder.indexOf(targetState).takeIf { it >= 0 } ?: 0
+                            swipeableTabs.indexOf(targetState).takeIf { it >= 0 } ?: 0
                         val forward = targetIndex > initialIndex
                         val enter = slideInHorizontally(animationSpec = tween(320)) { fullWidth ->
                             if (forward) fullWidth else -fullWidth
@@ -343,6 +349,7 @@ private fun HomeBottomBar(
     activeTab: BottomTab,
     isInFolder: Boolean,
     isDark: Boolean,
+    disabledTabs: Set<BottomTab>,
     onTabSelected: (BottomTab) -> Unit
 ) {
     val defaultColor = if (isDark) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else androidx.compose.ui.graphics.Color.Black
@@ -356,9 +363,15 @@ private fun HomeBottomBar(
         tonalElevation = 0.dp
     ) {
         bottomTabOrder.forEach { tab ->
-            val targetColor = if (activeTab == tab) selectedColor else defaultColor
+            val isDisabled = tab in disabledTabs
+            val targetColor = when {
+                activeTab == tab -> selectedColor
+                isDisabled -> defaultColor.copy(alpha = 0.3f)
+                else -> defaultColor
+            }
             val animatedColor by animateColorAsState(targetValue = targetColor, label = "navColor")
             val isSelected = activeTab == tab
+            val labelText = if (isDisabled) "Coming soon" else tab.header
             NavigationBarItem(
                 icon = {
                     Column(
@@ -369,11 +382,11 @@ private fun HomeBottomBar(
                         Icon(
                             tab.icon(isSelected),
                             contentDescription = tab.header,
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(28.dp),
                             tint = animatedColor
                         )
                         Text(
-                            text = tab.header,
+                            text = labelText,
                             color = animatedColor,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium
@@ -381,14 +394,15 @@ private fun HomeBottomBar(
                     }
                 },
                 selected = isSelected,
-                onClick = { onTabSelected(tab) },
+                onClick = { if (!isDisabled) onTabSelected(tab) },
                 label = null,
                 colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
                     selectedIconColor = animatedColor,
                     unselectedIconColor = animatedColor,
                     indicatorColor = androidx.compose.ui.graphics.Color.Transparent
                 ),
-                interactionSource = remember { MutableInteractionSource() }
+                interactionSource = remember { MutableInteractionSource() },
+                enabled = !isDisabled
             )
         }
     }
@@ -447,7 +461,8 @@ private fun TabContent(
                 transcriptionViewModel = transcriptionViewModel,
                 command = recorderCommand,
                 onCommandHandled = onCommandHandled,
-                onRecordingStateChanged = onRecordingStateChanged
+                onRecordingStateChanged = onRecordingStateChanged,
+                onViewTranscription = onOpenTranscription
             )
         }
 

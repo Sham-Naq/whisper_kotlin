@@ -28,6 +28,7 @@ import androidx.compose.material.FloatingActionButton
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Slider
+import androidx.compose.material.SliderDefaults
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
@@ -194,6 +195,7 @@ fun TranscriptionDetailScreen(
     val transcriptCardBackground = MaterialTheme.colorScheme.surface
     val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)
     val cornerRadius = 16.dp
+    val emphasizedCornerRadius = cornerRadius + 12.dp
 
     Box(
         modifier = modifier
@@ -209,7 +211,7 @@ fun TranscriptionDetailScreen(
             // Card 1: Metadata overview
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(cornerRadius),
+                shape = RoundedCornerShape(emphasizedCornerRadius),
                 backgroundColor = subtleCardBackground,
                 elevation = 0.dp,
                 border = BorderStroke(1.dp, cardBorderColor)
@@ -273,7 +275,7 @@ fun TranscriptionDetailScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = true),
-                shape = RoundedCornerShape(cornerRadius + 12.dp),
+                shape = RoundedCornerShape(emphasizedCornerRadius),
                 backgroundColor = transcriptCardBackground,
                 elevation = 4.dp,
                 border = BorderStroke(1.dp, cardBorderColor)
@@ -374,7 +376,7 @@ fun TranscriptionDetailScreen(
             // Card 3: Audio seekbar pinned to bottom
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(cornerRadius),
+                shape = RoundedCornerShape(emphasizedCornerRadius),
                 backgroundColor = subtleCardBackground,
                 elevation = 0.dp,
                 border = BorderStroke(1.dp, cardBorderColor)
@@ -417,7 +419,12 @@ fun TranscriptionDetailScreen(
                                             playbackPositionMs = target
                                         }
                                     },
-                                    valueRange = 0f..1f
+                                    valueRange = 0f..1f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                                        inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                    )
                                 )
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
