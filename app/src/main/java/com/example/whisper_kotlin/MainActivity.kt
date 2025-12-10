@@ -1,5 +1,6 @@
 package com.example.whisper_kotlin
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,7 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
-import com.example.compose.AppTheme
+import com.example.whisper_kotlin.theme.AppTheme
 import com.example.whisper_kotlin.data.TranscriptionRepository
 import com.example.whisper_kotlin.navigation.ThemePreference
 import com.example.whisper_kotlin.ui.HomeScreen
@@ -45,15 +46,11 @@ class MainActivity : ComponentActivity() {
                 )
 
                 // Set status bar color to match nav bar
-                val statusBarColor = if (isDarkTheme) {
-                    androidx.compose.ui.graphics.Color(0xFF2C2C2E)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                }
+                val statusBarColor = MaterialTheme.colorScheme.background
 
                 SideEffect {
                     window.statusBarColor = statusBarColor.toArgb()
-                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                    window.navigationBarColor = Color.TRANSPARENT
 
                     val insetsController = WindowCompat.getInsetsController(window, window.decorView)
                     insetsController.isAppearanceLightStatusBars = !isDarkTheme

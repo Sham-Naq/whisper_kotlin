@@ -16,36 +16,42 @@ import androidx.compose.ui.graphics.vector.ImageVector
 enum class BottomTab(
     val route: String,
     val header: String,
+    val topBar: String,
     private val filledIcon: ImageVector,
     private val outlinedIcon: ImageVector
 ) {
     Recents(
         route = "recents",
         header = "Recents",
+        topBar = "Recent recordings",
         filledIcon = Icons.Filled.History,
         outlinedIcon = Icons.Outlined.History
     ),
     Transcription(
         route = "transcription",
         header = "Files",
+        topBar = "Manage recordings",
         filledIcon = Icons.Filled.Folder,
         outlinedIcon = Icons.Outlined.Folder
     ),
     Recorder(
         route = "recorder",
         header = "Recorder",
+        topBar = "New Recording",
         filledIcon = Icons.Filled.Mic,
         outlinedIcon = Icons.Outlined.MicNone
     ),
     Chats(
         route = "chats",
         header = "Chats",
+        topBar = "Chats",
         filledIcon = Icons.Filled.Chat,
         outlinedIcon = Icons.Outlined.Chat
     ),
     Settings(
         route = "settings",
         header = "Settings",
+        topBar = "Settings",
         filledIcon = Icons.Filled.Settings,
         outlinedIcon = Icons.Outlined.Settings
     );

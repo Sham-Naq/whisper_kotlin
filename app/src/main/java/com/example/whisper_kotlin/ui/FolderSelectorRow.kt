@@ -1,16 +1,7 @@
-package com.example.whisper_kotlin
+package com.example.whisper_kotlin.ui
 
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.whisper_kotlin.ui.components.ReusableDropdown
 import com.example.whisper_kotlin.ui.components.DropdownMenuItem
 

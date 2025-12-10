@@ -1,4 +1,4 @@
-package com.example.whisper_kotlin
+package com.example.whisper_kotlin.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.whisper_kotlin.ModelManager
 import com.example.whisper_kotlin.navigation.ThemePreference
 import com.example.whisper_kotlin.ui.components.ReusableDropdown
 import com.example.whisper_kotlin.ui.components.DropdownMenuItem

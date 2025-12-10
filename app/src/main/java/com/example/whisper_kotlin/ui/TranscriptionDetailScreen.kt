@@ -1,7 +1,10 @@
-package com.example.whisper_kotlin
+package com.example.whisper_kotlin.ui
 
 import android.media.MediaPlayer
+import android.os.Environment
 import android.widget.Toast
+import android.graphics.pdf.PdfDocument
+import android.text.TextPaint
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -15,8 +18,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.Card
-import androidx.compose.material.FloatingActionButton
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Slider
@@ -33,12 +33,14 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.HighlightOff
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,16 +65,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
-import com.example.whisper_kotlin.ModelDownloadViewModel
 import com.example.whisper_kotlin.ModelManager
-import com.example.whisper_kotlin.ModelOption
-import com.example.whisper_kotlin.ModelSelectorRow
 import kotlinx.coroutines.delay
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -125,6 +126,8 @@ fun TranscriptionDetailScreen(
     val audioFile = remember(currentEntry.audioPath) {
         currentEntry.audioPath?.let { File(it) }?.takeIf { it.exists() }
     }
+
+    var showExportDialog by remember { mutableStateOf(false) }
 
     DisposableEffect(audioFile) {
         val player = audioFile?.let {
@@ -189,13 +192,108 @@ fun TranscriptionDetailScreen(
         }
     }
 
-    // Define card colors inspired by iOS styling
+    val transcriptBody = when {
+        showTimestamps -> currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: "Generating timestamps…"
+        else -> currentEntry.transcript
+    }
+
+    fun exportTranscript(format: TranscriptExportFormat) {
+        val baseName = currentEntry.fileLabel.ifBlank { "transcript_${currentEntry.id}" }
+        val safeBase = baseName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+        fun downloadsFile(extension: String): File {
+            @Suppress("DEPRECATION")
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (!downloadsDir.exists()) {
+                downloadsDir.mkdirs()
+            }
+            return File(downloadsDir, "$safeBase.$extension")
+        }
+
+        try {
+            when (format) {
+                TranscriptExportFormat.TXT -> {
+                    val content = transcriptBody
+                    val out = downloadsFile("txt")
+                    out.writeText(content)
+                    Toast.makeText(context, "Saved as ${out.name} in Downloads", Toast.LENGTH_SHORT).show()
+                }
+
+                TranscriptExportFormat.SRT -> {
+                    val content = currentEntry.timestampedTranscript ?: transcriptBody
+                    val out = downloadsFile("srt")
+                    out.writeText(content)
+                    Toast.makeText(context, "Saved as ${out.name} in Downloads", Toast.LENGTH_SHORT).show()
+                }
+
+                TranscriptExportFormat.VTT -> {
+                    val body = currentEntry.timestampedTranscript ?: transcriptBody
+                    val content = if (body.trimStart().startsWith("WEBVTT")) body else "WEBVTT\n\n$body"
+                    val out = downloadsFile("vtt")
+                    out.writeText(content)
+                    Toast.makeText(context, "Saved as ${out.name} in Downloads", Toast.LENGTH_SHORT).show()
+                }
+
+                TranscriptExportFormat.PDF -> {
+                    val out = downloadsFile("pdf")
+                    val pdfDocument = PdfDocument()
+                    val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4-ish at 72dpi
+                    val page = pdfDocument.startPage(pageInfo)
+                    val canvas = page.canvas
+                    val paint = TextPaint().apply {
+                        textSize = 12f
+                        color = android.graphics.Color.BLACK
+                    }
+                    val maxWidth = pageInfo.pageWidth - 80
+                    var y = 40f
+                    val lineHeight = 16f
+
+                    transcriptBody.lines().forEach { line ->
+                        var remaining = line
+                        while (remaining.isNotEmpty()) {
+                            val count = paint.breakText(remaining, true, maxWidth.toFloat(), null)
+                            val part = remaining.substring(0, count)
+                            canvas.drawText(part, 40f, y, paint)
+                            remaining = remaining.substring(count)
+                            y += lineHeight
+                            if (y > pageInfo.pageHeight - 40) {
+                                // Stop if we run past a single page; keep it simple
+                                remaining = ""
+                            }
+                        }
+                        y += lineHeight
+                    }
+
+                    pdfDocument.finishPage(page)
+                    FileOutputStream(out).use { pdfDocument.writeTo(it) }
+                    pdfDocument.close()
+                    Toast.makeText(context, "Saved as ${out.name} in Downloads", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Define card colors
     val pageBackground = MaterialTheme.colorScheme.background
     val subtleCardBackground = pageBackground
     val transcriptCardBackground = MaterialTheme.colorScheme.surface
     val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)
     val cornerRadius = 16.dp
     val emphasizedCornerRadius = cornerRadius + 12.dp
+
+    // Format audio duration for header
+    val audioDurationText = remember(currentEntry.audioDurationSec, playbackDurationMs) {
+        val sec = when {
+            currentEntry.audioDurationSec > 0 -> currentEntry.audioDurationSec
+            playbackDurationMs > 0 -> (playbackDurationMs / 1000)
+            else -> 0
+        }
+        val minutes = sec / 60
+        val seconds = sec % 60
+        String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+    }
 
     Box(
         modifier = modifier
@@ -206,43 +304,99 @@ fun TranscriptionDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Card 1: Metadata overview
-            Card(
+            // Header: Title centered
+            BasicText(
+                text = currentEntry.fileLabel,
+                style = TextStyle(
+                    color = textColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Info row: Duration | Model | Playback indicator
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(emphasizedCornerRadius),
-                backgroundColor = subtleCardBackground,
-                elevation = 0.dp,
-                border = BorderStroke(1.dp, cardBorderColor)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    BasicText(
-                        text = currentEntry.fileLabel,
-                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
+                // Duration with clock icon
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.AccessTime,
+                        contentDescription = "Duration",
+                        modifier = Modifier.size(16.dp),
+                        tint = textColor.copy(alpha = 0.65f)
                     )
+                    Spacer(modifier = Modifier.size(4.dp))
                     BasicText(
-                        text = "Model: ${currentEntry.modelLabel}",
-                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                        text = audioDurationText,
+                        style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
                     )
-                    BasicText(
-                        text = timestamp,
-                        style = TextStyle(color = textColor.copy(alpha = 0.65f))
+                }
+                // Model with globe icon
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.Language,
+                        contentDescription = "Model",
+                        modifier = Modifier.size(16.dp),
+                        tint = textColor.copy(alpha = 0.65f)
                     )
+                    Spacer(modifier = Modifier.size(4.dp))
                     BasicText(
-                        text = "Transcription time: $durationLabel (${currentEntry.transcriptionDurationMs} ms)",
-                        style = TextStyle(color = textColor.copy(alpha = 0.65f))
+                        text = currentEntry.modelLabel,
+                        style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
+                    )
+                }
+                // Playback indicator with green dot
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF0487fd))
+                    )
+                    Spacer(modifier = Modifier.size(4.dp))
+                    BasicText(
+                        text = "Playback",
+                        style = TextStyle(color = Color(0xFF0487fd), fontSize = 14.sp)
                     )
                 }
             }
 
-            val transcriptBody = when {
-                showTimestamps -> currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: "Generating timestamps…"
-                else -> currentEntry.transcript
+            // "Transcription" label row with info icon and export button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BasicText(
+                        text = "Transcription",
+                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    )
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier.size(18.dp),
+                        tint = Color(0xFF2196F3)
+                    )
+                }
+                // Export button
+                DetailActionIcon(
+                    icon = Icons.Filled.Share,
+                    tint = Color(0xFF4CAF50),
+                    background = Color(0xFF4CAF50),
+                    contentDescription = "Export transcript",
+                    onClick = { showExportDialog = true }
+                )
             }
+
             val bodyStyle = TextStyle(color = textColor.copy(alpha = 0.85f))
             val annotatedTranscript = remember(transcriptBody, showTimestamps, textColor) {
                 if (!showTimestamps) {
@@ -277,7 +431,6 @@ fun TranscriptionDetailScreen(
                     .weight(1f, fill = true),
                 shape = RoundedCornerShape(emphasizedCornerRadius),
                 backgroundColor = transcriptCardBackground,
-                elevation = 4.dp,
                 border = BorderStroke(1.dp, cardBorderColor)
             ) {
                 LazyColumn(
@@ -321,11 +474,11 @@ fun TranscriptionDetailScreen(
                                     }
                                 )
                                 DetailActionIcon(
-                                    icon = Icons.Filled.AccessTime,
+                                    icon = if (showTimestamps) Icons.Outlined.HighlightOff else Icons.Filled.AccessTime,
                                     tint = Color(0xFFBA68C8),
                                     background = Color(0xFFBA68C8),
                                     contentDescription = if (showTimestamps) "Hide timestamps" else "Show with timestamps",
-                                    strikeThrough = showTimestamps,
+                                    strikeThrough = false,
                                     enabled = !uiState.isTranscribing && timestampAvailable,
                                     onClick = {
                                         if (showTimestamps) {
@@ -450,11 +603,50 @@ fun TranscriptionDetailScreen(
                 }
             }
         }
-    
     }
 
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            backgroundColor = dialogBackground,
+            contentColor = textColor,
+            title = {
+                Text("Export As", color = textColor, fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Choose a file format to export.",
+                        color = textColor.copy(alpha = 0.8f)
+                    )
+                    ExportOptionButton("TXT") {
+                        showExportDialog = false
+                        exportTranscript(TranscriptExportFormat.TXT)
+                    }
+                    ExportOptionButton("PDF") {
+                        showExportDialog = false
+                        exportTranscript(TranscriptExportFormat.PDF)
+                    }
+                    ExportOptionButton("SRT (SubRip)") {
+                        showExportDialog = false
+                        exportTranscript(TranscriptExportFormat.SRT)
+                    }
+                    ExportOptionButton("VTT (WebVTT)") {
+                        showExportDialog = false
+                        exportTranscript(TranscriptExportFormat.VTT)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showExportDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
-        if (showReTranscribeDialog) {
+    if (showReTranscribeDialog) {
         AlertDialog(
             onDismissRequest = { showReTranscribeDialog = false },
             backgroundColor = dialogBackground,
@@ -507,9 +699,9 @@ fun TranscriptionDetailScreen(
                 }
             }
         )
-        }
     }
 
+}
 
 @Composable
 private fun DetailActionIcon(
@@ -544,6 +736,38 @@ private fun DetailActionIcon(
             }
         }
     }
+}
+
+@Composable
+private fun ExportOptionButton(label: String, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+private enum class TranscriptExportFormat {
+    TXT,
+    PDF,
+    SRT,
+    VTT
 }
 
 private fun normalizeTimestampTranscript(raw: String): String {

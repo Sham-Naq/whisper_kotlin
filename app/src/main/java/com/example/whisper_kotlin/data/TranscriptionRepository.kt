@@ -1,11 +1,10 @@
 package com.example.whisper_kotlin.data
 
 import android.content.Context
-import com.example.whisper_kotlin.SavedTranscription
-import com.example.whisper_kotlin.Folder
+import com.example.whisper_kotlin.ui.SavedTranscription
+import com.example.whisper_kotlin.ui.Folder
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File

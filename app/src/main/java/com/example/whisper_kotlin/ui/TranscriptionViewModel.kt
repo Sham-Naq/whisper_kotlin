@@ -1,10 +1,13 @@
-package com.example.whisper_kotlin
+package com.example.whisper_kotlin.ui
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.whisper_kotlin.ModelManager
+import com.example.whisper_kotlin.WhisperEngine
 import com.example.whisper_kotlin.data.TranscriptionRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -41,6 +44,7 @@ data class SavedTranscription(
     val timestampedTranscript: String? = null,
     val timestamp: Long,
     val audioPath: String? = null,
+    val audioDurationSec: Int = 0,
     val transcriptionDurationMs: Long = 0L,
     // Optional folder containment; null means it appears at the root level
     val folderId: Long? = null
@@ -153,6 +157,27 @@ class TranscriptionViewModel(
         }
     }
 
+    private fun readAudioDurationSeconds(path: String?): Int {
+        if (path.isNullOrBlank()) return 0
+        return runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(path)
+                val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                if (durationMs != null && durationMs > 0) {
+                    ((durationMs + 500) / 1000).toInt()
+                } else {
+                    0
+                }
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Throwable) {
+                }
+            }
+        }.getOrElse { 0 }
+    }
+
     private data class TranscriptionRun(
         val plainTranscript: String,
         val timestampedTranscript: String,
@@ -203,7 +228,11 @@ class TranscriptionViewModel(
 
         val startMs = SystemClock.elapsedRealtime()
         val transcription = when (audioSource) {
-            is AudioSource.Asset -> WhisperEngine.transcribeWavAsset(appContext, audioSource.assetPath, onProgress)
+            is AudioSource.Asset -> WhisperEngine.transcribeWavAsset(
+                appContext,
+                audioSource.assetPath,
+                onProgress
+            )
             is AudioSource.File -> WhisperEngine.transcribeWavFile(audioSource.path, onProgress)
         }
         val elapsedMs = SystemClock.elapsedRealtime() - startMs
@@ -261,6 +290,7 @@ class TranscriptionViewModel(
 
                 appendLog("File: $fileLabel\nModel: ${result.modelLabel}\nTranscript:\n${result.plainTranscript}\n$timeLine")
                 val audioPath = persistAudioFile(appContext, audioSource)
+                val audioDurationSec = readAudioDurationSeconds(audioPath)
                 val entry = SavedTranscription(
                     id = idCounter.incrementAndGet(),
                     fileLabel = fileLabel,
@@ -269,6 +299,7 @@ class TranscriptionViewModel(
                     timestampedTranscript = result.timestampedTranscript,
                     timestamp = System.currentTimeMillis(),
                     audioPath = audioPath,
+                    audioDurationSec = audioDurationSec,
                     transcriptionDurationMs = result.elapsedMs,
                     folderId = targetFolderId
                 )
@@ -332,6 +363,7 @@ class TranscriptionViewModel(
                     timestampedTranscript = result.timestampedTranscript,
                     modelLabel = result.modelLabel,
                     timestamp = System.currentTimeMillis(),
+                    audioDurationSec = if (entrySnapshot.audioDurationSec > 0) entrySnapshot.audioDurationSec else readAudioDurationSeconds(entrySnapshot.audioPath),
                     transcriptionDurationMs = result.elapsedMs
                 )
                 appendLog("Re-transcribed ${entrySnapshot.fileLabel} (${result.modelLabel})")
@@ -505,6 +537,44 @@ class TranscriptionViewModel(
                 TranscriptionRepository.persistFolders(foldersToPersist)
                 TranscriptionRepository.persist(transToPersist)
             }
+        }
+    }
+
+    fun deleteMultiple(context: Context, folderIds: Set<Long>, transcriptionIds: Set<Long>) {
+        viewModelScope.launch(ioDispatcher) {
+            var foldersToPersist: List<Folder> = emptyList()
+            var transToPersist: List<SavedTranscription> = emptyList()
+            _uiState.update { current ->
+                // Collect all folder IDs to delete (including descendants)
+                val allFolderIdsToDelete: MutableSet<Long> = mutableSetOf()
+                folderIds.forEach { folderId ->
+                    allFolderIdsToDelete.add(folderId)
+                    collectDescendantFolderIds(folderId, current.folders, allFolderIdsToDelete)
+                }
+
+                // Delete audio files for transcriptions being removed
+                current.savedTranscriptions.forEach { st ->
+                    // Delete if transcription is explicitly selected OR if it's in a folder being deleted
+                    if (transcriptionIds.contains(st.id) || (st.folderId != null && allFolderIdsToDelete.contains(st.folderId))) {
+                        runCatching { st.audioPath?.let { java.io.File(it).takeIf { f -> f.exists() }?.delete() } }
+                    }
+                }
+
+                val remainingFolders = current.folders.filterNot { it.id in allFolderIdsToDelete }
+                val remainingTrans = current.savedTranscriptions.filterNot { st ->
+                    transcriptionIds.contains(st.id) || (st.folderId != null && allFolderIdsToDelete.contains(st.folderId))
+                }
+
+                foldersToPersist = remainingFolders
+                transToPersist = remainingTrans
+
+                current.copy(
+                    folders = remainingFolders,
+                    savedTranscriptions = remainingTrans
+                )
+            }
+            TranscriptionRepository.persistFolders(foldersToPersist)
+            TranscriptionRepository.persist(transToPersist)
         }
     }
 

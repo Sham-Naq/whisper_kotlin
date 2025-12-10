@@ -2,14 +2,13 @@ package com.example.whisper_kotlin.recorder
 
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,17 +18,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.Divider
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
@@ -43,12 +43,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.ripple
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,18 +58,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.whisper_kotlin.ActionButton
-import com.example.whisper_kotlin.AudioSource
-import com.example.whisper_kotlin.ModelOption
-import com.example.whisper_kotlin.ModelSelectorRow
-import com.example.whisper_kotlin.ModelDownloadViewModel
-import com.example.whisper_kotlin.TranscriptionViewModel
-import com.example.whisper_kotlin.FileSelectorRow
+import com.example.whisper_kotlin.ui.AudioSource
+import com.example.whisper_kotlin.ui.ModelOption
+import com.example.whisper_kotlin.ui.ModelDownloadViewModel
+import com.example.whisper_kotlin.ui.TranscriptionViewModel
 import com.example.whisper_kotlin.ModelManager
-import com.example.whisper_kotlin.FolderSelectorRow
 import com.example.whisper_kotlin.ui.components.ReusableDropdown
 import com.example.whisper_kotlin.ui.components.DropdownMenuItem
 import kotlinx.coroutines.Dispatchers
@@ -81,8 +77,14 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
+
+private enum class RecorderVisualState {
+    Idle,
+    Recording,
+    Transcribing,
+    Complete
+}
 
 @Composable
 fun RecorderScreen(
@@ -110,6 +112,7 @@ fun RecorderScreen(
     var rawFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var wavFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var isRecordedAudio by rememberSaveable { mutableStateOf(false) }
+    var recordingElapsedSeconds by rememberSaveable { mutableStateOf(0) }
 
     fun currentRawFile(): File? = rawFilePath?.let { File(it) }?.takeIf { it.exists() }
     fun currentWavFile(): File? = wavFilePath?.let { File(it) }?.takeIf { it.exists() }
@@ -138,6 +141,21 @@ fun RecorderScreen(
         playbackDurationMs = 0
     }
 
+    fun togglePlayback() {
+        val player = mediaPlayer ?: return
+        try {
+            if (isPlaying || player.isPlaying) {
+                player.pause()
+                isPlaying = false
+            } else {
+                player.start()
+                isPlaying = true
+            }
+        } catch (_: Throwable) {
+            isPlaying = false
+        }
+    }
+
     val startRecording: () -> Unit = {
         releasePlayer()
         currentWavFile()?.delete()
@@ -149,6 +167,7 @@ fun RecorderScreen(
         recorder.start(newRaw)
         isRecording = true
         recorderPaused = false
+        recordingElapsedSeconds = 0
         onRecordingStateChanged(true)
     }
 
@@ -324,6 +343,14 @@ fun RecorderScreen(
     // Track transcription state
     var showTranscriptionComplete by remember { mutableStateOf(false) }
 
+    var displayedState by rememberSaveable { mutableStateOf(RecorderVisualState.Idle) }
+    var lastNonIdleState by rememberSaveable { mutableStateOf<RecorderVisualState?>(null) }
+
+    fun clearVisualState() {
+        lastNonIdleState = null
+        displayedState = RecorderVisualState.Idle
+    }
+
     fun resetAfterTranscription() {
         showTranscriptionComplete = false
         wavFilePath = null
@@ -331,6 +358,7 @@ fun RecorderScreen(
         isRecordedAudio = false
         transcriptionName = generateDefaultTranscriptionName()
         releasePlayer()
+        clearVisualState()
     }
 
     val modelDownloadVm: ModelDownloadViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -379,12 +407,58 @@ fun RecorderScreen(
         }
     }
 
+    LaunchedEffect(isRecording, recorderPaused) {
+        if (isRecording && !recorderPaused) {
+            while (true) {
+                delay(1000)
+                recordingElapsedSeconds += 1
+            }
+        }
+    }
+
     // Show transcription complete when transcription finishes
     LaunchedEffect(transcriptionUi.isTranscribing) {
         if (!transcriptionUi.isTranscribing && wavFilePath != null && !isRecording) {
             showTranscriptionComplete = true
         }
     }
+
+    val targetVisualState = when {
+        isRecording -> RecorderVisualState.Recording
+        transcriptionUi.isTranscribing -> RecorderVisualState.Transcribing
+        showTranscriptionComplete -> RecorderVisualState.Complete
+        else -> RecorderVisualState.Idle
+    }
+
+    LaunchedEffect(
+        targetVisualState,
+        wavFilePath,
+        isRecording,
+        transcriptionUi.isTranscribing,
+        showTranscriptionComplete
+    ) {
+        when {
+            targetVisualState == RecorderVisualState.Idle &&
+                wavFilePath != null &&
+                !isRecording &&
+                !showTranscriptionComplete -> {
+                displayedState = RecorderVisualState.Transcribing
+                lastNonIdleState = RecorderVisualState.Transcribing
+            }
+
+            targetVisualState == RecorderVisualState.Idle -> {
+                displayedState = lastNonIdleState ?: RecorderVisualState.Idle
+            }
+
+            else -> {
+                displayedState = targetVisualState
+                lastNonIdleState = targetVisualState
+            }
+        }
+    }
+
+    val topSectionPadding = if (displayedState != RecorderVisualState.Idle) 0.dp else 16.dp
+    val audioSectionHeight = 150.dp
 
     Column(
         modifier = modifier
@@ -398,77 +472,54 @@ fun RecorderScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(top = 16.dp),
+                .padding(top = topSectionPadding),
             verticalArrangement = Arrangement.spacedBy(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Show different content based on state
-            when {
-                // Recording state: Show visualizer centered vertically
-                isRecording -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = true),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                    RoundedCornerShape(16.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (recorderPaused) {
-                                Text(
-                                    text = "Recording Paused",
-                                    color = textColor.copy(alpha = 0.5f),
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            } else {
-                                LineBarWaveform(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(16.dp),
-                                    bars = bars,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    backgroundColor = null
-                                )
-                            }
-                        }
+            when (displayedState) {
+                // Recording or transcribing share the same layout for consistent look
+                RecorderVisualState.Recording,
+                RecorderVisualState.Transcribing -> {
+                    val isTranscribingState = displayedState == RecorderVisualState.Transcribing
+                    val timerText = formatTime(recordingElapsedSeconds * 1000)
+                    val activeModelLabel =
+                        modelDownloadState.selectedModel?.id ?: selectedModel?.id ?: "tiny"
+                    val pulseTransition = rememberInfiniteTransition(label = "recordingPulse")
+                    val pulseAlpha by pulseTransition.animateFloat(
+                        initialValue = 0.4f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 800, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "recordingPulseAlpha"
+                    )
+
+                    val cancelColor = if (isTranscribingState) MaterialTheme.colorScheme.primary else Color(0xFFFF3B30)
+                    val rightStatusColor = if (isTranscribingState) MaterialTheme.colorScheme.primary else Color(0xFFFF3B30)
+                    val rightStatusText = when {
+                        isTranscribingState -> "Transcribing"
+                        recorderPaused -> "Paused"
+                        else -> "Recording"
                     }
-                }
-                // Transcribing state: Centered Material3 indicator
-                transcriptionUi.isTranscribing -> {
-                    Box(
+
+                    Text(
+                        text = if (isTranscribingState) "Cancel" else "Cancel",
+                        color = cancelColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = true),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            androidx.compose.material3.CircularProgressIndicator(
-                                modifier = Modifier.size(72.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                strokeWidth = 6.dp
-                            )
-                            Text(
-                                text = "Transcribing...",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = textColor
-                            )
-                            androidx.compose.material3.OutlinedButton(
-                                onClick = {
-                                    transcriptionViewModel.cancelTranscription()
+                            .align(Alignment.Start)
+                            .padding(top = 4.dp, bottom = 4.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                if (isTranscribingState) {
+                                    if (transcriptionUi.isTranscribing) {
+                                        transcriptionViewModel.cancelTranscription()
+                                    }
                                     showTranscriptionComplete = false
                                     isRecordedAudio = false
                                     currentWavFile()?.delete()
@@ -476,78 +527,403 @@ fun RecorderScreen(
                                     rawFilePath = null
                                     transcriptionName = generateDefaultTranscriptionName()
                                     releasePlayer()
-                                },
-                                modifier = Modifier
-                                    .padding(top = 8.dp)
-                                    .height(48.dp)
+                                    clearVisualState()
+                                } else if (isRecording) {
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            recorder.stop()
+                                        } finally {
+                                            withContext(Dispatchers.Main) {
+                                                isRecording = false
+                                                recorderPaused = false
+                                                recordingElapsedSeconds = 0
+                                                currentRawFile()?.delete()
+                                                rawFilePath = null
+                                                wavFilePath = null
+                                                isRecordedAudio = false
+                                                onRecordingStateChanged(false)
+                                                clearVisualState()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    clearVisualState()
+                                }
+                            }
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = true),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    text = "Cancel",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
+                                Icon(
+                                    imageVector = Icons.Filled.AccessTime,
+                                    contentDescription = "Recording duration",
+                                    tint = textColor.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(18.dp)
                                 )
+                                Text(
+                                    text = timerText,
+                                    color = textColor,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 16.sp
+                                )
+                            }
+
+                            Text(
+                                text = activeModelLabel,
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center,
+                                color = textColor.copy(alpha = 0.7f),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .background(
+                                            color = rightStatusColor.copy(alpha = if (isTranscribingState) 1f else pulseAlpha),
+                                            shape = CircleShape
+                                        )
+                                )
+                                Text(
+                                    text = rightStatusText,
+                                    color = rightStatusColor,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        androidx.compose.material.Divider(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = textColor.copy(alpha = 0.1f),
+                            thickness = 0.5.dp
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 200.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.background,
+                                    shape = RoundedCornerShape(22.dp)
+                                )
+                                .padding(horizontal = 32.dp, vertical = 36.dp)
+                        ) {
+                            if (isTranscribingState) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(32.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            strokeWidth = 4.dp
+                                        )
+                                        Text(
+                                            text = "Transcribing your recording…",
+                                            textAlign = TextAlign.Center,
+                                            color = textColor.copy(alpha = 0.8f),
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ChatBubbleOutline,
+                                        contentDescription = null,
+                                        tint = textColor.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Text(
+                                        text = "Transcription will appear here once recording is stopped and processed.",
+                                        textAlign = TextAlign.Center,
+                                        color = textColor.copy(alpha = 0.7f),
+                                        fontSize = 13.sp,
+                                        lineHeight = 18.sp
+                                    )
+                                    Text(
+                                        text = "Continue recording to capture your audio content.",
+                                        textAlign = TextAlign.Center,
+                                        color = textColor.copy(alpha = 0.55f),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f, fill = true))
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Mic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isTranscribingState) "Audio Playback" else "Audio Waveform",
+                                    color = textColor.copy(alpha = 0.6f),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        RoundedCornerShape(20.dp)
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                            ) {
+                                if (isTranscribingState) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        androidx.compose.material3.IconButton(
+                                            onClick = { togglePlayback() },
+                                            enabled = canPlayRecording
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                        Column(
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Slider(
+                                                value = playbackProgress,
+                                                onValueChange = { value ->
+                                                    if (mediaPlayer != null && playbackDurationMs > 0) {
+                                                        val newPos = (value * playbackDurationMs).toInt()
+                                                        mediaPlayer?.seekTo(newPos)
+                                                        playbackPositionMs = newPos
+                                                        playbackProgress = value
+                                                    }
+                                                },
+                                                enabled = canPlayRecording
+                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = formatTime(playbackPositionMs),
+                                                    color = textColor.copy(alpha = 0.6f),
+                                                    fontSize = 12.sp
+                                                )
+                                                Text(
+                                                    text = formatTime(playbackDurationMs),
+                                                    color = textColor.copy(alpha = 0.6f),
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    if (recorderPaused) {
+                                        Text(
+                                            text = "Recording Paused",
+                                            color = textColor.copy(alpha = 0.6f),
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.align(Alignment.Center)
+                                        )
+                                    } else {
+                                        LineBarWaveform(
+                                            modifier = Modifier.fillMaxSize(),
+                                            bars = bars,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            backgroundColor = null
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                // Transcription complete state: Show success message
-                showTranscriptionComplete -> {
-                    Box(
+                // Transcription complete state: show text in grey box and Finish
+                RecorderVisualState.Complete -> {
+                    val latestEntry = transcriptionUi.savedTranscriptions.firstOrNull()
+
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f, fill = true),
-                        contentAlignment = Alignment.Center
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(24.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Transcription Saved",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                text = latestEntry?.fileLabel ?: "Transcription",
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center,
+                                color = textColor.copy(alpha = 0.9f),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
-                            val latestEntryId = transcriptionUi.savedTranscriptions.firstOrNull()?.id
-                            if (latestEntryId != null) {
-                                androidx.compose.material3.OutlinedButton(
-                                    onClick = {
-                                        resetAfterTranscription()
-                                        onViewTranscription(latestEntryId)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text(
-                                        text = "View transcription",
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 200.dp)
+                                .background(
+                                    color = if (isDark) Color(0xFF2C2C2E) else Color(0xFFF4F4F6),
+                                    shape = RoundedCornerShape(22.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = textColor.copy(alpha = 0.08f),
+                                    shape = RoundedCornerShape(22.dp)
+                                )
+                                .padding(horizontal = 24.dp, vertical = 24.dp)
+                        ) {
+                            if (latestEntry != null) {
+                                LazyColumn {
+                                    item {
+                                        androidx.compose.material3.Text(
+                                            text = latestEntry.transcript,
+                                            color = textColor,
+                                            fontSize = 14.sp,
+                                            lineHeight = 20.sp
+                                        )
+                                    }
                                 }
+                            } else {
+                                Text(
+                                    text = "Transcription saved.",
+                                    color = textColor.copy(alpha = 0.8f),
+                                    fontSize = 14.sp
+                                )
                             }
-                            androidx.compose.material3.OutlinedButton(
-                                onClick = { resetAfterTranscription() },
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f, fill = true))
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Mic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Audio Playback",
+                                    color = textColor.copy(alpha = 0.6f),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp)
+                                    .height(audioSectionHeight)
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        RoundedCornerShape(20.dp)
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
                             ) {
-                                Text(
-                                    text = "Finish",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    androidx.compose.material3.IconButton(
+                                        onClick = { togglePlayback() },
+                                        enabled = canPlayRecording
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                            contentDescription = if (isPlaying) "Pause" else "Play",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Slider(
+                                            value = playbackProgress,
+                                            onValueChange = { value ->
+                                                if (mediaPlayer != null && playbackDurationMs > 0) {
+                                                    val newPos = (value * playbackDurationMs).toInt()
+                                                    mediaPlayer?.seekTo(newPos)
+                                                    playbackPositionMs = newPos
+                                                    playbackProgress = value
+                                                }
+                                            },
+                                            enabled = canPlayRecording
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = formatTime(playbackPositionMs),
+                                                color = textColor.copy(alpha = 0.6f),
+                                                fontSize = 12.sp
+                                            )
+                                            Text(
+                                                text = formatTime(playbackDurationMs),
+                                                color = textColor.copy(alpha = 0.6f),
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
                 // Default state: Show logo, instructions, and options
-                else -> {
+                RecorderVisualState.Idle -> {
                     // Logo and instructions
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -556,7 +932,7 @@ fun RecorderScreen(
                         // Blue circular logo with mic icon
                         Box(
                             modifier = Modifier
-                                .size(70.dp)
+                                .size(60.dp)
                                 .background(
                                     color = MaterialTheme.colorScheme.primary,
                                     shape = CircleShape
@@ -587,7 +963,7 @@ fun RecorderScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    //Spacer(modifier = Modifier.height(16.dp))
 
                     // Options card
                     Column(
@@ -655,8 +1031,8 @@ fun RecorderScreen(
                         }
 
                         // Divider
-                        androidx.compose.material3.Divider(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        androidx.compose.material.Divider(
+                            modifier = Modifier.fillMaxWidth(),
                             color = textColor.copy(alpha = 0.1f),
                             thickness = 0.5.dp
                         )
@@ -744,8 +1120,8 @@ fun RecorderScreen(
                         }
 
                         // Divider
-                        androidx.compose.material3.Divider(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        androidx.compose.material.Divider(
+                            modifier = Modifier.fillMaxWidth(),
                             color = textColor.copy(alpha = 0.1f),
                             thickness = 0.5.dp
                         )
@@ -886,11 +1262,12 @@ fun RecorderScreen(
                         // Pause/Resume button
                         Box(
                             modifier = Modifier
-                                .size(70.dp)
+                                .size(60.dp)
                                 .background(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    color = Color(0xFFFFF4E6),
                                     shape = CircleShape
                                 )
+                                .border(1.dp, Color(0xFFFFDDB8), CircleShape)
                                 .clickable {
                                     if (recorderPaused) {
                                         recorder.resume()
@@ -905,7 +1282,7 @@ fun RecorderScreen(
                             Icon(
                                 imageVector = if (recorderPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                                 contentDescription = if (recorderPaused) "Resume" else "Pause",
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    tint = if (recorderPaused) Color(0xFFF98A2D) else Color(0xFFF98A2D),
                                 modifier = Modifier.size(32.dp)
                             )
                         }
@@ -913,7 +1290,7 @@ fun RecorderScreen(
                         // Stop button
                         Box(
                             modifier = Modifier
-                                .size(70.dp)
+                                .size(60.dp)
                                 .background(
                                     color = Color(0xFFD32F2F),
                                     shape = CircleShape
@@ -967,7 +1344,7 @@ fun RecorderScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(80.dp)
+                                .size(60.dp)
                                 .background(
                                     color = Color(0xFFFF3B30),
                                     shape = CircleShape

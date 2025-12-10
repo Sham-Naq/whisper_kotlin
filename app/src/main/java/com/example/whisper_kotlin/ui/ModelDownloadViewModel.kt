@@ -1,8 +1,10 @@
-package com.example.whisper_kotlin
+package com.example.whisper_kotlin.ui
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.whisper_kotlin.ModelManager
+import com.example.whisper_kotlin.WhisperEngine
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,7 +12,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class ModelDownloadUiState(
     val selectedModel: ModelOption? = null,
@@ -71,7 +72,8 @@ class ModelDownloadViewModel(
                         modelFileName = option.fileName,
                         modelUrl = option.url,
                         onProgress = { p ->
-                            val pct = if (p.totalBytes > 0) ((p.bytesRead * 100L) / p.totalBytes).toInt() else 0
+                            val pct =
+                                if (p.totalBytes > 0) ((p.bytesRead * 100L) / p.totalBytes).toInt() else 0
                             _uiState.update { s -> s.copy(progressPct = pct.coerceIn(0, 100)) }
                         }
                     )

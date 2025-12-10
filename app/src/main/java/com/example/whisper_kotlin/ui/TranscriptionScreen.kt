@@ -1,4 +1,4 @@
-package com.example.whisper_kotlin
+package com.example.whisper_kotlin.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -15,7 +15,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +31,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,7 +39,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
-import androidx.compose.material.Card
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.LinearProgressIndicator
@@ -51,23 +49,17 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.TextButton
 import androidx.compose.material.ripple
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material.Checkbox
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.Divider
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 
@@ -111,6 +103,7 @@ fun TranscriptionScreen(
     var selectedFolderIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var selectedTranscriptionIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelectionDialog by remember { mutableStateOf(false) }
+    val sectionHorizontalPadding = 12.dp
     val folderDepthResolver: (Long?) -> Int = remember(uiState.folders) {
         val folderMap = uiState.folders.associateBy { it.id }
         val cache = mutableMapOf<Long?, Int>().apply { put(null, 0) }
@@ -241,11 +234,10 @@ fun TranscriptionScreen(
                         // Folders section
                         if (folders.isNotEmpty()) {
                             item(key = "folders_header_$currentFolderId") {
-                                Text(
+                                SectionHeaderLabel(
                                     text = "Folders",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    color = textColor,
-                                    style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
                                 )
                             }
                             
@@ -254,6 +246,7 @@ fun TranscriptionScreen(
                                     FolderItem(
                                         folder = folder,
                                         textColor = textColor,
+                                        horizontalPadding = sectionHorizontalPadding,
                                         selectionMode = selectionMode,
                                         isSelected = selectedFolderIds.contains(folder.id),
                                         onFolderClick = {
@@ -278,7 +271,7 @@ fun TranscriptionScreen(
                                     // Add divider except after last folder (if no recordings) or before recordings section
                                     if (index < folders.lastIndex || saved.isNotEmpty()) {
                                         androidx.compose.material.Divider(
-                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            modifier = Modifier.padding(horizontal = sectionHorizontalPadding),
                                             color = textColor.copy(alpha = 0.1f),
                                             thickness = 0.5.dp
                                         )
@@ -290,11 +283,10 @@ fun TranscriptionScreen(
                         // Recordings section
                         if (saved.isNotEmpty()) {
                             item(key = "recordings_header_$currentFolderId") {
-                                Text(
+                                SectionHeaderLabel(
                                     text = if (currentFolderId == null) "Uncategorized Recordings" else "Recordings",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    color = textColor,
-                                    style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
                                 )
                             }
                             
@@ -327,7 +319,7 @@ fun TranscriptionScreen(
                                     // Add divider except for last item
                                     if (index < saved.lastIndex) {
                                         androidx.compose.material.Divider(
-                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            modifier = Modifier.fillMaxWidth(),
                                             color = textColor.copy(alpha = 0.1f),
                                             thickness = 0.5.dp
                                         )
@@ -434,10 +426,8 @@ fun TranscriptionScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        // Delete folders first (will also remove transcriptions within)
-                        selectedFolderIds.forEach { fid -> viewModel.deleteFolder(fid) }
-                        // Then delete any remaining specifically-selected transcriptions
-                        selectedTranscriptionIds.forEach { tid -> viewModel.deleteTranscription(context, tid) }
+                        // Delete all selected items in a single batch operation
+                        viewModel.deleteMultiple(context, selectedFolderIds, selectedTranscriptionIds)
                         selectionMode = false
                         selectedFolderIds = emptySet()
                         selectedTranscriptionIds = emptySet()
@@ -476,6 +466,7 @@ fun TranscriptionScreen(
 private fun FolderItem(
     folder: Folder,
     textColor: Color,
+    horizontalPadding: Dp,
     selectionMode: Boolean,
     isSelected: Boolean,
     onFolderClick: () -> Unit,
@@ -491,12 +482,12 @@ private fun FolderItem(
                 onClick = onFolderClick,
                 onLongClick = onFolderLongClick
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = horizontalPadding, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Folder icon
         Icon(
-            imageVector = Icons.Filled.Folder,
+            imageVector = Icons.Outlined.FolderOpen,
             contentDescription = null,
             modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.primary
@@ -546,8 +537,12 @@ private fun RecordingItem(
             ?: "Tap to view transcript"
     }
     
-    val durationText = remember(entry.transcriptionDurationMs) {
-        val durationSec = (entry.transcriptionDurationMs / 1000).toInt()
+    val durationText = remember(entry.audioDurationSec, entry.transcriptionDurationMs) {
+        val durationSec = when {
+            entry.audioDurationSec > 0 -> entry.audioDurationSec
+            entry.transcriptionDurationMs > 0 -> ((entry.transcriptionDurationMs + 500) / 1000).toInt()
+            else -> 0
+        }
         val minutes = durationSec / 60
         val seconds = durationSec % 60
         String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
@@ -562,7 +557,7 @@ private fun RecordingItem(
                 onClick = onRecordingClick,
                 onLongClick = onRecordingLongClick
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Waveform icon
@@ -570,7 +565,7 @@ private fun RecordingItem(
             imageVector = Icons.Filled.GraphicEq,
             contentDescription = null,
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.primary
+            tint = Color(0xFFd664e5)
         )
         
         Spacer(modifier = Modifier.padding(horizontal = 8.dp))
@@ -607,5 +602,24 @@ private fun RecordingItem(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SectionHeaderLabel(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .background(colorScheme.surfaceVariant)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = text,
+            color = colorScheme.onSurfaceVariant,
+            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        )
     }
 }
