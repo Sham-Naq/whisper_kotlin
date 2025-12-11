@@ -8,6 +8,7 @@ import android.text.TextPaint
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -83,15 +84,20 @@ fun TranscriptionDetailScreen(
     entry: SavedTranscription,
     textColor: Color,
     modifier: Modifier = Modifier,
-    viewModel: TranscriptionViewModel,
-    onBack: () -> Unit,
-    onDelete: () -> Unit
+    viewModel: TranscriptionViewModel
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val currentEntry = uiState.savedTranscriptions.firstOrNull { it.id == entry.id } ?: entry
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var showTimestamps by remember(currentEntry.id) { mutableStateOf(false) }
+    val isTranscriptReady = currentEntry.status == TranscriptionStatus.Completed && currentEntry.transcript.isNotBlank()
+
+    LaunchedEffect(currentEntry.status) {
+        if (!isTranscriptReady) {
+            showTimestamps = false
+        }
+    }
     val isDark = isSystemInDarkTheme()
     val selectorButtonBg = MaterialTheme.colorScheme.surfaceVariant
     val dialogBackground = MaterialTheme.colorScheme.surface
@@ -193,7 +199,8 @@ fun TranscriptionDetailScreen(
     }
 
     val transcriptBody = when {
-        showTimestamps -> currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: "Generating timestamps…"
+        !isTranscriptReady -> currentEntry.errorMessage ?: "Transcript not available. Tap re-transcribe to try again."
+        showTimestamps -> currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: currentEntry.transcript
         else -> currentEntry.transcript
     }
 
@@ -295,310 +302,388 @@ fun TranscriptionDetailScreen(
         String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
     }
 
+    val isReTranscribing = uiState.isTranscribing && currentEntry.status == TranscriptionStatus.Pending
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(pageBackground)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Header: Title centered
-            BasicText(
-                text = currentEntry.fileLabel,
-                style = TextStyle(
-                    color = textColor,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Center
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            // Info row: Duration | Model | Playback indicator
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        if (isReTranscribing) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Duration with clock icon
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.AccessTime,
-                        contentDescription = "Duration",
-                        modifier = Modifier.size(16.dp),
-                        tint = textColor.copy(alpha = 0.65f)
-                    )
-                    Spacer(modifier = Modifier.size(4.dp))
-                    BasicText(
-                        text = audioDurationText,
-                        style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
-                    )
-                }
-                // Model with globe icon
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Outlined.Language,
-                        contentDescription = "Model",
-                        modifier = Modifier.size(16.dp),
-                        tint = textColor.copy(alpha = 0.65f)
-                    )
-                    Spacer(modifier = Modifier.size(4.dp))
-                    BasicText(
-                        text = currentEntry.modelLabel,
-                        style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
-                    )
-                }
-                // Playback indicator with green dot
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF0487fd))
-                    )
-                    Spacer(modifier = Modifier.size(4.dp))
-                    BasicText(
-                        text = "Playback",
-                        style = TextStyle(color = Color(0xFF0487fd), fontSize = 14.sp)
-                    )
-                }
-            }
-
-            // "Transcription" label row with info icon and export button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BasicText(
-                        text = "Transcription",
-                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                    )
-                    Spacer(modifier = Modifier.size(6.dp))
-                    Icon(
-                        imageVector = Icons.Outlined.Info,
-                        contentDescription = "Info",
-                        modifier = Modifier.size(18.dp),
-                        tint = Color(0xFF2196F3)
-                    )
-                }
-                // Export button
-                DetailActionIcon(
-                    icon = Icons.Filled.Share,
-                    tint = Color(0xFF4CAF50),
-                    background = Color(0xFF4CAF50),
-                    contentDescription = "Export transcript",
-                    onClick = { showExportDialog = true }
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    strokeWidth = 4.dp
                 )
+                Spacer(modifier = Modifier.size(24.dp))
+                Text(
+                    text = "Re-transcribing…",
+                    style = TextStyle(
+                        color = textColor,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(
+                    text = "This may take a moment depending on the audio length and model selected.",
+                    style = TextStyle(
+                        color = textColor.copy(alpha = 0.7f),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                )
+                Spacer(modifier = Modifier.size(32.dp))
+                TextButton(
+                    onClick = { viewModel.cancelTranscription() },
+                    colors = androidx.compose.material.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Cancel", fontWeight = FontWeight.Medium)
+                }
             }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header: Title centered
+                BasicText(
+                    text = currentEntry.fileLabel,
+                    style = TextStyle(
+                        color = textColor,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-            val bodyStyle = TextStyle(color = textColor.copy(alpha = 0.85f))
-            val annotatedTranscript = remember(transcriptBody, showTimestamps, textColor) {
-                if (!showTimestamps) {
-                    AnnotatedString(transcriptBody)
-                } else {
-                    val timestampStyle = SpanStyle(color = textColor.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
-                    val lines = transcriptBody.split('\n')
-                    buildAnnotatedString {
-                        lines.forEachIndexed { index, line ->
-                            if (line.isNotEmpty() && line.startsWith('(') && line.indexOf(')') > 0) {
-                                val endIndex = line.indexOf(')')
-                                withStyle(timestampStyle) {
-                                    append(line.substring(0, endIndex + 1))
+                // Info row: Duration | Model | Playback indicator
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Duration with clock icon
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.AccessTime,
+                            contentDescription = "Duration",
+                            modifier = Modifier.size(16.dp),
+                            tint = textColor.copy(alpha = 0.65f)
+                        )
+                        Spacer(modifier = Modifier.size(4.dp))
+                        BasicText(
+                            text = audioDurationText,
+                            style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
+                        )
+                    }
+                    // Model with globe icon
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Language,
+                            contentDescription = "Model",
+                            modifier = Modifier.size(16.dp),
+                            tint = textColor.copy(alpha = 0.65f)
+                        )
+                        Spacer(modifier = Modifier.size(4.dp))
+                        BasicText(
+                            text = currentEntry.modelLabel,
+                            style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
+                        )
+                    }
+                    // Playback indicator with green dot
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF0487fd))
+                        )
+                        Spacer(modifier = Modifier.size(4.dp))
+                        BasicText(
+                            text = "Playback",
+                            style = TextStyle(color = Color(0xFF0487fd), fontSize = 14.sp)
+                        )
+                    }
+                }
+
+                // "Transcription" label row with info icon and export button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BasicText(
+                            text = "Transcription",
+                            style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        )
+                        Spacer(modifier = Modifier.size(6.dp))
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = "Info",
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable {
+                                    Toast.makeText(
+                                        context,
+                                        "This transcription was generated by AI and may contain mistakes",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                },
+                            tint = Color(0xFF2196F3)
+                        )
+                    }
+                    if (isTranscriptReady) {
+                        DetailActionIcon(
+                            icon = Icons.Filled.Share,
+                            tint = Color(0xFF4CAF50),
+                            background = Color(0xFF4CAF50),
+                            contentDescription = "Export transcript",
+                            onClick = { showExportDialog = true }
+                        )
+                    }
+                }
+
+                val bodyStyle = TextStyle(color = textColor.copy(alpha = 0.85f))
+                val annotatedTranscript = remember(transcriptBody, showTimestamps, textColor) {
+                    if (!showTimestamps) {
+                        AnnotatedString(transcriptBody)
+                    } else {
+                        val timestampStyle = SpanStyle(color = textColor.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                        val lines = transcriptBody.split('\n')
+                        buildAnnotatedString {
+                            lines.forEachIndexed { index, line ->
+                                if (line.isNotEmpty() && line.startsWith('(') && line.indexOf(')') > 0) {
+                                    val endIndex = line.indexOf(')')
+                                    withStyle(timestampStyle) {
+                                        append(line.substring(0, endIndex + 1))
+                                    }
+                                    append(line.substring(endIndex + 1))
+                                } else {
+                                    append(line)
                                 }
-                                append(line.substring(endIndex + 1))
-                            } else {
-                                append(line)
-                            }
-                            if (index < lines.size - 1) {
-                                append('\n')
+                                if (index < lines.size - 1) {
+                                    append('\n')
+                                }
                             }
                         }
                     }
                 }
-            }
-            val timestampAvailable = !currentEntry.timestampedTranscript.isNullOrBlank() || audioFile != null
+                val timestampAvailable = isTranscriptReady && (!currentEntry.timestampedTranscript.isNullOrBlank() || audioFile != null)
 
-            // Card 2: Transcription content + actions
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = true),
-                shape = RoundedCornerShape(emphasizedCornerRadius),
-                backgroundColor = transcriptCardBackground,
-                border = BorderStroke(1.dp, cardBorderColor)
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                // Card 2: Transcription content + actions
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = true),
+                    shape = RoundedCornerShape(emphasizedCornerRadius),
+                    backgroundColor = transcriptCardBackground,
+                    border = BorderStroke(1.dp, cardBorderColor)
                 ) {
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val wordCount = remember(transcriptBody) {
-                                transcriptBody.split(Regex("\\s+")).filter { it.isNotBlank() }.size
-                            }
-                            val charCount = remember(transcriptBody) { transcriptBody.length }
-                            Column(
-                                modifier = Modifier.weight(1f, fill = true)
-                            ) {
-                                BasicText(
-                                    text = "${wordCount} words • ${charCount} chars",
-                                    style = TextStyle(color = textColor.copy(alpha = 0.7f), fontSize = MaterialTheme.typography.bodySmall.fontSize)
-                                )
-                            }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                DetailActionIcon(
-                                    icon = Icons.Filled.Refresh,
-                                    tint = Color(0xFFFFA726),
-                                    background = Color(0xFFFFA726),
-                                    contentDescription = "Re-transcribe",
-                                    enabled = !uiState.isTranscribing && currentEntry.audioPath != null,
-                                    onClick = {
-                                        if (reTranscribeSelectedModel == null) {
-                                            reTranscribeSelectedModel = modelDownloadState.selectedModel ?: entryModelOption
-                                        }
-                                        showReTranscribeDialog = true
-                                    }
-                                )
-                                DetailActionIcon(
-                                    icon = if (showTimestamps) Icons.Outlined.HighlightOff else Icons.Filled.AccessTime,
-                                    tint = Color(0xFFBA68C8),
-                                    background = Color(0xFFBA68C8),
-                                    contentDescription = if (showTimestamps) "Hide timestamps" else "Show with timestamps",
-                                    strikeThrough = false,
-                                    enabled = !uiState.isTranscribing && timestampAvailable,
-                                    onClick = {
-                                        if (showTimestamps) {
-                                            showTimestamps = false
-                                        } else {
-                                            val existing = currentEntry.timestampedTranscript
-                                            if (!existing.isNullOrBlank()) {
-                                                showTimestamps = true
-                                            } else {
-                                                val hasAudio = audioFile != null
-                                                if (hasAudio) {
-                                                    showTimestamps = true
-                                                    viewModel.ensureTimestampedTranscript(context, currentEntry.id)
-                                                } else {
-                                                    Toast.makeText(context, "Original audio missing", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
-                                    }
-                                )
-                                DetailActionIcon(
-                                    icon = Icons.Filled.ContentCopy,
-                                    tint = Color(0xFF64B5F6),
-                                    background = Color(0xFF64B5F6),
-                                    contentDescription = "Copy transcript",
-                                    onClick = {
-                                        val textToCopy = if (showTimestamps) {
-                                            currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: currentEntry.transcript
-                                        } else {
-                                            currentEntry.transcript
-                                        }
-                                        clipboardManager.setText(AnnotatedString(textToCopy))
-                                        Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    item {
-                        BasicText(
-                            text = annotatedTranscript,
-                            style = bodyStyle
-                        )
-                    }
-                }
-            }
-
-            // Card 3: Audio seekbar pinned to bottom
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(emphasizedCornerRadius),
-                backgroundColor = subtleCardBackground,
-                elevation = 0.dp,
-                border = BorderStroke(1.dp, cardBorderColor)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    if (audioFile != null && mediaPlayer != null && playbackDurationMs > 0) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            IconButton(onClick = {
-                                val player = mediaPlayer
-                                if (player != null) {
-                                    if (isPlaying) {
-                                        player.pause()
-                                        isPlaying = false
-                                    } else {
-                                        player.start()
-                                        isPlaying = true
-                                    }
+                                val (wordCount, charCount) = remember(transcriptBody, isTranscriptReady) {
+                                    if (isTranscriptReady) {
+                                        val words = transcriptBody.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+                                        words to transcriptBody.length
+                                    } else 0 to 0
                                 }
-                            }) {
-                                Icon(
-                                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    contentDescription = if (isPlaying) "Pause" else "Play",
-                                    tint = textColor
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f, fill = true)) {
-                                Slider(
-                                    value = playbackProgress,
-                                    onValueChange = { value ->
-                                        playbackProgress = value
-                                        val player = mediaPlayer
-                                        if (player != null && playbackDurationMs > 0) {
-                                            val target = (value * playbackDurationMs).toInt().coerceIn(0, playbackDurationMs)
-                                            player.seekTo(target)
-                                            playbackPositionMs = target
-                                        }
-                                    },
-                                    valueRange = 0f..1f,
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = MaterialTheme.colorScheme.primary,
-                                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                                        inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                    )
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                Column(
+                                    modifier = Modifier.weight(1f, fill = true)
                                 ) {
                                     BasicText(
-                                        text = formatTime(playbackPositionMs),
-                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                        text = "${wordCount} words • ${charCount} chars",
+                                        style = TextStyle(color = textColor.copy(alpha = 0.7f), fontSize = MaterialTheme.typography.bodySmall.fontSize)
                                     )
+                                }
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    DetailActionIcon(
+                                        icon = Icons.Filled.Refresh,
+                                        tint = Color(0xFFFFA726),
+                                        background = Color(0xFFFFA726),
+                                        contentDescription = "Re-transcribe",
+                                        enabled = !uiState.isTranscribing && currentEntry.audioPath != null,
+                                        onClick = {
+                                            if (reTranscribeSelectedModel == null) {
+                                                reTranscribeSelectedModel = modelDownloadState.selectedModel ?: entryModelOption
+                                            }
+                                            showReTranscribeDialog = true
+                                        }
+                                    )
+                                    if (isTranscriptReady) {
+                                        DetailActionIcon(
+                                            icon = if (showTimestamps) Icons.Outlined.HighlightOff else Icons.Filled.AccessTime,
+                                            tint = Color(0xFFBA68C8),
+                                            background = Color(0xFFBA68C8),
+                                            contentDescription = if (showTimestamps) "Hide timestamps" else "Show with timestamps",
+                                            strikeThrough = false,
+                                            enabled = !uiState.isTranscribing && timestampAvailable,
+                                            onClick = {
+                                                if (showTimestamps) {
+                                                    showTimestamps = false
+                                                } else {
+                                                    val existing = currentEntry.timestampedTranscript
+                                                    if (!existing.isNullOrBlank()) {
+                                                        showTimestamps = true
+                                                    } else {
+                                                        val hasAudio = audioFile != null
+                                                        if (hasAudio) {
+                                                            showTimestamps = true
+                                                            viewModel.ensureTimestampedTranscript(context, currentEntry.id)
+                                                        } else {
+                                                            Toast.makeText(context, "Original audio missing", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        DetailActionIcon(
+                                            icon = Icons.Filled.ContentCopy,
+                                            tint = Color(0xFF64B5F6),
+                                            background = Color(0xFF64B5F6),
+                                            contentDescription = "Copy transcript",
+                                            onClick = {
+                                                val textToCopy = if (showTimestamps) {
+                                                    currentEntry.timestampedTranscript?.let(::normalizeTimestampTranscript) ?: currentEntry.transcript
+                                                } else {
+                                                    currentEntry.transcript
+                                                }
+                                                clipboardManager.setText(AnnotatedString(textToCopy))
+                                                Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (!isTranscriptReady) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFFFFF5F5), RoundedCornerShape(12.dp))
+                                        .border(BorderStroke(1.dp, Color(0xFFFFCDD2)), RoundedCornerShape(12.dp))
+                                        .padding(12.dp)
+                                ) {
                                     BasicText(
-                                        text = formatTime(playbackDurationMs),
-                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                        text = currentEntry.errorMessage ?: "Transcription pending. Tap re-transcribe to continue.",
+                                        style = TextStyle(color = Color(0xFFD32F2F), fontWeight = FontWeight.SemiBold)
                                     )
                                 }
                             }
                         }
-                    } else {
-                        BasicText(
-                            text = "Audio preview unavailable",
-                            style = TextStyle(color = textColor.copy(alpha = 0.6f))
-                        )
+                        if (isTranscriptReady) {
+                            item {
+                                BasicText(
+                                    text = annotatedTranscript,
+                                    style = bodyStyle
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Card 3: Audio seekbar pinned to bottom
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(emphasizedCornerRadius),
+                    backgroundColor = subtleCardBackground,
+                    elevation = 0.dp,
+                    border = BorderStroke(1.dp, cardBorderColor)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        if (audioFile != null && mediaPlayer != null && playbackDurationMs > 0) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                IconButton(onClick = {
+                                    val player = mediaPlayer
+                                    if (player != null) {
+                                        if (isPlaying) {
+                                            player.pause()
+                                            isPlaying = false
+                                        } else {
+                                            player.start()
+                                            isPlaying = true
+                                        }
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                        contentDescription = if (isPlaying) "Pause" else "Play",
+                                        tint = textColor
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f, fill = true)) {
+                                    Slider(
+                                        value = playbackProgress,
+                                        onValueChange = { value ->
+                                            playbackProgress = value
+                                            val player = mediaPlayer
+                                            if (player != null && playbackDurationMs > 0) {
+                                                val target = (value * playbackDurationMs).toInt().coerceIn(0, playbackDurationMs)
+                                                player.seekTo(target)
+                                                playbackPositionMs = target
+                                            }
+                                        },
+                                        valueRange = 0f..1f,
+                                        colors = SliderDefaults.colors(
+                                            thumbColor = MaterialTheme.colorScheme.primary,
+                                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                                            inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                        )
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        BasicText(
+                                            text = formatTime(playbackPositionMs),
+                                            style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                        )
+                                        BasicText(
+                                            text = formatTime(playbackDurationMs),
+                                            style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            BasicText(
+                                text = "Audio preview unavailable",
+                                style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                            )
+                        }
                     }
                 }
             }
@@ -804,5 +889,356 @@ private fun conciseTimestampToken(token: String): String {
         "${outHours}:${outMinutes.toString().padStart(2, '0')}:${outSeconds.toString().padStart(2, '0')}"
     } else {
         "${outMinutes}:${outSeconds.toString().padStart(2, '0')}"
+    }
+}
+
+/**
+ * Embedded version of TranscriptionDetailScreen for use in RecorderScreen.
+ * Shows the transcription detail layout during transcribing or after completion.
+ */
+@Composable
+fun EmbeddedTranscriptionDetail(
+    entry: SavedTranscription?,
+    textColor: Color,
+    isTranscribing: Boolean,
+    modifier: Modifier = Modifier,
+    selectedModelLabel: String? = null,
+    mediaPlayer: MediaPlayer?,
+    isPlaying: Boolean,
+    playbackProgress: Float,
+    playbackPositionMs: Int,
+    playbackDurationMs: Int,
+    onTogglePlayback: () -> Unit,
+    onSeek: (Float) -> Unit,
+    onCancel: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    
+    val isTranscriptReady = entry?.status == TranscriptionStatus.Completed && entry.transcript.isNotBlank()
+    
+    // Define card colors - same as TranscriptionDetailScreen
+    val pageBackground = MaterialTheme.colorScheme.background
+    val subtleCardBackground = pageBackground
+    val transcriptCardBackground = MaterialTheme.colorScheme.surface
+    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)
+    val cornerRadius = 16.dp
+    val emphasizedCornerRadius = cornerRadius + 12.dp
+
+    // Format audio duration - same as TranscriptionDetailScreen
+    val audioDurationText = remember(entry?.audioDurationSec, playbackDurationMs) {
+        val sec = when {
+            (entry?.audioDurationSec ?: 0) > 0 -> entry?.audioDurationSec ?: 0
+            playbackDurationMs > 0 -> (playbackDurationMs / 1000)
+            else -> 0
+        }
+        val minutes = sec / 60
+        val seconds = sec % 60
+        String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+    }
+
+    fun formatTime(ms: Int): String {
+        val totalSeconds = ms / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return "%d:%02d".format(minutes, seconds)
+    }
+
+    val transcriptBody = when {
+        isTranscribing -> ""
+        entry == null -> ""
+        !isTranscriptReady -> entry.errorMessage ?: "Transcript not available. Tap re-transcribe to try again."
+        else -> entry.transcript
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(pageBackground)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header: Title centered - same as TranscriptionDetailScreen
+            BasicText(
+                text = entry?.fileLabel ?: "Recording",
+                style = TextStyle(
+                    color = textColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Info row: Duration | Model | Playback indicator - same as TranscriptionDetailScreen
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Duration with clock icon
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.AccessTime,
+                        contentDescription = "Duration",
+                        modifier = Modifier.size(16.dp),
+                        tint = textColor.copy(alpha = 0.65f)
+                    )
+                    Spacer(modifier = Modifier.size(4.dp))
+                    BasicText(
+                        text = audioDurationText,
+                        style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
+                    )
+                }
+                // Model with globe icon
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.Language,
+                        contentDescription = "Model",
+                        modifier = Modifier.size(16.dp),
+                        tint = textColor.copy(alpha = 0.65f)
+                    )
+                    Spacer(modifier = Modifier.size(4.dp))
+                    val modelLabelToShow = when {
+                        entry?.modelLabel != null && entry.modelLabel != "Pending model" -> entry.modelLabel
+                        selectedModelLabel != null -> selectedModelLabel
+                        else -> "whisper"
+                    }
+                    BasicText(
+                        text = modelLabelToShow,
+                        style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
+                    )
+                }
+                // Status indicator - blue like TranscriptionDetailScreen, but show state
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF0487fd))
+                    )
+                    Spacer(modifier = Modifier.size(4.dp))
+                    BasicText(
+                        text = if (isTranscribing) "Transcribing" else "Playback",
+                        style = TextStyle(color = Color(0xFF0487fd), fontSize = 14.sp)
+                    )
+                }
+            }
+
+            // "Transcription" label row with info icon - same as TranscriptionDetailScreen
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BasicText(
+                        text = "Transcription",
+                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    )
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable {
+                                Toast
+                                    .makeText(
+                                        context,
+                                        "This transcription was generated by AI and may contain mistakes",
+                                        Toast.LENGTH_LONG
+                                    )
+                                    .show()
+                            },
+                        tint = Color(0xFF2196F3)
+                    )
+                }
+                // Done/Cancel button depending on state
+                TextButton(onClick = onCancel) {
+                    Text(
+                        text = if (isTranscribing) "Cancel" else "Done",
+                        color = if (isTranscribing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // Card: Transcription content - same styling as TranscriptionDetailScreen
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = true),
+                shape = RoundedCornerShape(emphasizedCornerRadius),
+                backgroundColor = transcriptCardBackground,
+                border = BorderStroke(1.dp, cardBorderColor)
+            ) {
+                if (isTranscribing) {
+                    // Transcribing state - show progress
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                strokeWidth = 4.dp
+                            )
+                            Text(
+                                text = "Transcribing your recording…",
+                                textAlign = TextAlign.Center,
+                                color = textColor.copy(alpha = 0.8f),
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = "This may take a moment",
+                                textAlign = TextAlign.Center,
+                                color = textColor.copy(alpha = 0.5f),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                } else {
+                    // Complete state - show transcript with same layout as TranscriptionDetailScreen
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val (wordCount, charCount) = remember(transcriptBody, isTranscriptReady) {
+                                    if (isTranscriptReady) {
+                                        val words = transcriptBody.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+                                        words to transcriptBody.length
+                                    } else 0 to 0
+                                }
+                                Column(
+                                    modifier = Modifier.weight(1f, fill = true)
+                                ) {
+                                    BasicText(
+                                        text = "${wordCount} words • ${charCount} chars",
+                                        style = TextStyle(color = textColor.copy(alpha = 0.7f), fontSize = MaterialTheme.typography.bodySmall.fontSize)
+                                    )
+                                }
+                                // Action icons - same as TranscriptionDetailScreen
+                                if (isTranscriptReady) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        DetailActionIcon(
+                                            icon = Icons.Filled.ContentCopy,
+                                            tint = Color(0xFF64B5F6),
+                                            background = Color(0xFF64B5F6),
+                                            contentDescription = "Copy transcript",
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(transcriptBody))
+                                                Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (!isTranscriptReady && entry != null) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFFFFF5F5), RoundedCornerShape(12.dp))
+                                        .border(BorderStroke(1.dp, Color(0xFFFFCDD2)), RoundedCornerShape(12.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    BasicText(
+                                        text = entry.errorMessage ?: "Transcription pending. Tap re-transcribe to continue.",
+                                        style = TextStyle(color = Color(0xFFD32F2F), fontWeight = FontWeight.SemiBold)
+                                    )
+                                }
+                            }
+                        }
+                        if (isTranscriptReady) {
+                            item {
+                                BasicText(
+                                    text = transcriptBody,
+                                    style = TextStyle(color = textColor.copy(alpha = 0.85f))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Card: Audio seekbar - same styling as TranscriptionDetailScreen
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(emphasizedCornerRadius),
+                backgroundColor = subtleCardBackground,
+                elevation = 0.dp,
+                border = BorderStroke(1.dp, cardBorderColor)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    if (mediaPlayer != null && playbackDurationMs > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            IconButton(onClick = onTogglePlayback) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = textColor
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f, fill = true)) {
+                                Slider(
+                                    value = playbackProgress,
+                                    onValueChange = onSeek,
+                                    valueRange = 0f..1f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                                        inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                    )
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    BasicText(
+                                        text = formatTime(playbackPositionMs),
+                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                    )
+                                    BasicText(
+                                        text = formatTime(playbackDurationMs),
+                                        style = TextStyle(color = textColor.copy(alpha = 0.75f))
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        BasicText(
+                            text = if (isTranscribing) "Audio will be available after transcription" else "Audio preview unavailable",
+                            style = TextStyle(color = textColor.copy(alpha = 0.6f))
+                        )
+                    }
+                }
+            }
+        }
     }
 }

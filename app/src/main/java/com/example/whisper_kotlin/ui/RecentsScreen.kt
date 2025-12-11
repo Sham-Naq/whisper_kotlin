@@ -11,14 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.ripple
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -206,18 +208,35 @@ private fun TranscriptionItem(
                 style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Row {
-                val dateText = remember(entry.timestamp) {
-                    java.text.SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH)
-                        .format(java.util.Date(entry.timestamp))
-                        .lowercase(Locale.ENGLISH)
+
+            val isTranscriptReady = entry.status == TranscriptionStatus.Completed && entry.transcript.isNotBlank()
+            val dateText = remember(entry.timestamp) {
+                java.text.SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH)
+                    .format(java.util.Date(entry.timestamp))
+                    .lowercase(Locale.ENGLISH)
+            }
+            if (isTranscriptReady) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+
+                    androidx.compose.material.Text(
+                        text = dateText,
+                        color = textColor.copy(alpha = 0.6f),
+                        style = TextStyle(fontSize = 12.sp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.ChatBubble,
+                        contentDescription = "Transcript ready",
+                        tint = Color(0xFF0088fe),
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
+            } else {
                 androidx.compose.material.Text(
                     text = dateText,
                     color = textColor.copy(alpha = 0.6f),
                     style = TextStyle(fontSize = 12.sp)
                 )
-
             }
         }
 

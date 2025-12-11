@@ -18,7 +18,8 @@ data class ModelDownloadUiState(
     val downloadingId: String? = null,
     val progressPct: Int = 0,
     val message: String? = null,
-    val isCancelling: Boolean = false
+    val isCancelling: Boolean = false,
+    val isLoadingModel: Boolean = false
 )
 
 class ModelDownloadViewModel(
@@ -84,6 +85,8 @@ class ModelDownloadViewModel(
                     _uiState.update { it.copy(message = "Download failed: ${'$'}{t.message}") }
                     return@launch
                 }
+                // Download complete, now loading model into memory
+                _uiState.update { it.copy(downloadingId = null, progressPct = 0, isLoadingModel = true) }
                 runCatching {
                     val mf = ModelManager.getLocalModelFile(appContext, option.fileName)
                     if (mf.exists() && mf.length() > 1_000_000) { // sanity threshold to avoid tiny/corrupt file loads
@@ -94,7 +97,7 @@ class ModelDownloadViewModel(
                 }
                 _uiState.update { it.copy(selectedModel = option, message = it.message) }
             } finally {
-                _uiState.update { it.copy(downloadingId = null, progressPct = 0, isCancelling = false) }
+                _uiState.update { it.copy(downloadingId = null, progressPct = 0, isCancelling = false, isLoadingModel = false) }
             }
         }
     }

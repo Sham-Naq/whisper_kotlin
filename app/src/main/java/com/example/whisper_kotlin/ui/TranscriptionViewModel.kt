@@ -47,8 +47,17 @@ data class SavedTranscription(
     val audioDurationSec: Int = 0,
     val transcriptionDurationMs: Long = 0L,
     // Optional folder containment; null means it appears at the root level
-    val folderId: Long? = null
+    val folderId: Long? = null,
+    val status: TranscriptionStatus = TranscriptionStatus.Completed,
+    val errorMessage: String? = null
 )
+
+@Serializable
+enum class TranscriptionStatus {
+    Pending,
+    Completed,
+    Failed
+}
 
 @Serializable
 data class Folder(
@@ -103,6 +112,40 @@ class TranscriptionViewModel(
             current.copy(savedTranscriptions = next)
         }
         TranscriptionRepository.persist(updated)
+    }
+
+    private suspend fun updateTranscriptionEntry(
+        entryId: Long,
+        transform: (SavedTranscription) -> SavedTranscription
+    ) {
+        var updatedList: List<SavedTranscription>? = null
+        var didUpdate = false
+        _uiState.update { current ->
+            val next = current.savedTranscriptions.map { existing ->
+                if (existing.id == entryId) {
+                    didUpdate = true
+                    transform(existing)
+                } else existing
+            }
+            if (didUpdate) {
+                updatedList = next
+                current.copy(savedTranscriptions = next)
+            } else {
+                current
+            }
+        }
+        updatedList?.let { TranscriptionRepository.persist(it) }
+    }
+
+    private suspend fun markEntryFailure(entryId: Long?, reason: String) {
+        if (entryId == null) return
+        updateTranscriptionEntry(entryId) { existing ->
+            existing.copy(
+                status = TranscriptionStatus.Failed,
+                errorMessage = reason.ifBlank { "Transcription unavailable" },
+                timestamp = System.currentTimeMillis()
+            )
+        }
     }
 
     fun navigateToFolder(folderId: Long?) {
@@ -268,6 +311,7 @@ class TranscriptionViewModel(
 
         currentTranscriptionJob?.cancel()
         currentTranscriptionJob = viewModelScope.launch(ioDispatcher) {
+            var placeholderId: Long? = null
             try {
                 _uiState.update {
                     it.copy(
@@ -278,38 +322,57 @@ class TranscriptionViewModel(
                 }
                 _uiState.update { it.copy(statusMessage = "Preparing audio…") }
 
-                val result = performTranscription(appContext, selectedModel, audioSource) { processed, total ->
-                    updateProgress("Transcribing…", processed, total)
-                }
-                val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", result.elapsedMs / 1000.0) + " s (" + result.elapsedMs + " ms)"
                 val providedLabel = transcriptionName?.trim()?.takeIf { it.isNotEmpty() }
                 val fileLabel = providedLabel ?: when (audioSource) {
                     is AudioSource.Asset -> audioSource.assetPath.substringAfterLast('/')
                     is AudioSource.File -> java.io.File(audioSource.path).name
                 }
 
-                appendLog("File: $fileLabel\nModel: ${result.modelLabel}\nTranscript:\n${result.plainTranscript}\n$timeLine")
                 val audioPath = persistAudioFile(appContext, audioSource)
+                    ?: throw IllegalStateException("Unable to persist audio source")
                 val audioDurationSec = readAudioDurationSeconds(audioPath)
-                val entry = SavedTranscription(
+                val pendingEntry = SavedTranscription(
                     id = idCounter.incrementAndGet(),
                     fileLabel = fileLabel,
-                    modelLabel = result.modelLabel,
-                    transcript = result.plainTranscript,
-                    timestampedTranscript = result.timestampedTranscript,
+                    modelLabel = selectedModel?.id ?: "Pending model",
+                    transcript = "",
+                    timestampedTranscript = null,
                     timestamp = System.currentTimeMillis(),
                     audioPath = audioPath,
                     audioDurationSec = audioDurationSec,
-                    transcriptionDurationMs = result.elapsedMs,
-                    folderId = targetFolderId
+                    transcriptionDurationMs = 0L,
+                    folderId = targetFolderId,
+                    status = TranscriptionStatus.Pending,
+                    errorMessage = null
                 )
-                saveTranscriptionEntry(entry)
+                placeholderId = pendingEntry.id
+                saveTranscriptionEntry(pendingEntry)
+
+                val result = performTranscription(appContext, selectedModel, AudioSource.File(audioPath)) { processed, total ->
+                    updateProgress("Transcribing…", processed, total)
+                }
+                val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", result.elapsedMs / 1000.0) + " s (" + result.elapsedMs + " ms)"
+
+                appendLog("File: $fileLabel\nModel: ${result.modelLabel}\nTranscript:\n${result.plainTranscript}\n$timeLine")
+                updateTranscriptionEntry(placeholderId!!) { existing ->
+                    existing.copy(
+                        transcript = result.plainTranscript,
+                        timestampedTranscript = result.timestampedTranscript,
+                        modelLabel = result.modelLabel,
+                        timestamp = System.currentTimeMillis(),
+                        transcriptionDurationMs = result.elapsedMs,
+                        status = TranscriptionStatus.Completed,
+                        errorMessage = null
+                    )
+                }
                 _uiState.update { it.copy(statusMessage = "Transcription saved: $fileLabel") }
             } catch (ce: CancellationException) {
                 appendLog("Transcription cancelled")
+                markEntryFailure(placeholderId, "Transcription cancelled")
                 _uiState.update { it.copy(statusMessage = "Transcription cancelled") }
             } catch (t: Throwable) {
                 appendLog("Transcribe failed: $t")
+                markEntryFailure(placeholderId, t.message ?: "Transcription failed")
                 _uiState.update { it.copy(statusMessage = "Transcribe failed: ${t.message}") }
             } finally {
                 _uiState.update { it.copy(isTranscribing = false, progress = null) }
@@ -354,6 +417,9 @@ class TranscriptionViewModel(
                     )
                 }
                 _uiState.update { it.copy(statusMessage = "Preparing audio…") }
+                updateTranscriptionEntry(entryId) { existing ->
+                    existing.copy(status = TranscriptionStatus.Pending, errorMessage = null)
+                }
 
                 val result = performTranscription(appContext, option, source) { processed, total ->
                     updateProgress("Re-transcribing ${entrySnapshot.fileLabel}…", processed, total)
@@ -364,22 +430,20 @@ class TranscriptionViewModel(
                     modelLabel = result.modelLabel,
                     timestamp = System.currentTimeMillis(),
                     audioDurationSec = if (entrySnapshot.audioDurationSec > 0) entrySnapshot.audioDurationSec else readAudioDurationSeconds(entrySnapshot.audioPath),
-                    transcriptionDurationMs = result.elapsedMs
+                    transcriptionDurationMs = result.elapsedMs,
+                    status = TranscriptionStatus.Completed,
+                    errorMessage = null
                 )
                 appendLog("Re-transcribed ${entrySnapshot.fileLabel} (${result.modelLabel})")
-
-                var persisted: List<SavedTranscription> = emptyList()
-                _uiState.update { current ->
-                    val next = current.savedTranscriptions.map { if (it.id == entryId) updatedEntry else it }
-                    persisted = next
-                    current.copy(savedTranscriptions = next, statusMessage = "Updated ${entrySnapshot.fileLabel}")
-                }
-                TranscriptionRepository.persist(persisted)
+                updateTranscriptionEntry(entryId) { updatedEntry }
+                _uiState.update { it.copy(statusMessage = "Updated ${entrySnapshot.fileLabel}") }
             } catch (ce: CancellationException) {
                 appendLog("Re-transcription cancelled")
+                markEntryFailure(entryId, "Re-transcription cancelled")
                 _uiState.update { it.copy(statusMessage = "Re-transcription cancelled") }
             } catch (t: Throwable) {
                 appendLog("Re-transcribe failed: $t")
+                markEntryFailure(entryId, t.message ?: "Re-transcription failed")
                 _uiState.update { it.copy(statusMessage = "Re-transcribe failed: ${t.message}") }
             } finally {
                 _uiState.update { it.copy(isTranscribing = false, progress = null) }
@@ -390,6 +454,10 @@ class TranscriptionViewModel(
 
     fun ensureTimestampedTranscript(context: Context, entryId: Long) {
         val entry = _uiState.value.savedTranscriptions.firstOrNull { it.id == entryId } ?: return
+        if (entry.status != TranscriptionStatus.Completed || entry.transcript.isBlank()) {
+            _uiState.update { it.copy(statusMessage = "Transcript not available yet for ${entry.fileLabel}") }
+            return
+        }
         if (!entry.timestampedTranscript.isNullOrBlank()) {
             _uiState.update { it.copy(statusMessage = null) }
             return

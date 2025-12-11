@@ -53,11 +53,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.Checkbox
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import java.util.Locale
@@ -120,7 +122,6 @@ fun TranscriptionScreen(
         Column(modifier = Modifier.fillMaxWidth()) {
             val dialogBackground = MaterialTheme.colorScheme.surface
             val progress = uiState.progress
-            val statusMessage = uiState.statusMessage
 
             // Back: if a detail overlay is visible, let the parent handle it; otherwise
             // exit selection first; else navigate up a folder when inside one
@@ -140,21 +141,9 @@ fun TranscriptionScreen(
                     progress?.let {
                         LinearProgressIndicator(progress = it, modifier = Modifier.fillMaxWidth())
                     } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Spacer(modifier = Modifier.height(6.dp))
-                    BasicText(
-                        text = statusMessage ?: "Transcribing…",
-                        style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-            } else if (statusMessage != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                BasicText(
-                    text = statusMessage,
-                    style = TextStyle(color = textColor, fontWeight = FontWeight.SemiBold)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Selection mode controls (only show cancel and delete when in selection mode)
@@ -547,7 +536,7 @@ private fun RecordingItem(
         val seconds = durationSec % 60
         String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
     }
-    
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -567,9 +556,9 @@ private fun RecordingItem(
             modifier = Modifier.size(24.dp),
             tint = Color(0xFFd664e5)
         )
-        
+
         Spacer(modifier = Modifier.padding(horizontal = 8.dp))
-        
+
          // Content
         Column(
             modifier = Modifier.weight(1f)
@@ -580,13 +569,37 @@ private fun RecordingItem(
                 style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = firstLine,
-                color = textColor.copy(alpha = 0.6f),
-                style = TextStyle(fontSize = 12.sp)
-            )
+
+            val isTranscriptReady = entry.status == TranscriptionStatus.Completed && entry.transcript.isNotBlank()
+            val dateText = remember(entry.timestamp) {
+                java.text.SimpleDateFormat("dd-MMM-yyyy", Locale.ENGLISH)
+                    .format(java.util.Date(entry.timestamp))
+                    .lowercase(Locale.ENGLISH)
+            }
+            if (isTranscriptReady) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = dateText,
+                        color = textColor.copy(alpha = 0.6f),
+                        style = TextStyle(fontSize = 12.sp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.ChatBubble,
+                        contentDescription = "Transcript ready",
+                        tint = Color(0xFF0088fe),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = dateText,
+                    color = textColor.copy(alpha = 0.6f),
+                    style = TextStyle(fontSize = 12.sp)
+                )
+            }
         }
-        
+
         // Duration and selection
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (!selectionMode) {

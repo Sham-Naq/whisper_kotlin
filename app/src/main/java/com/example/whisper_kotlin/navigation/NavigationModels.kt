@@ -56,7 +56,7 @@ enum class BottomTab(
         outlinedIcon = Icons.Outlined.Settings
     );
 
-    fun icon(isSelected: Boolean): ImageVector = if (isSelected) filledIcon else outlinedIcon
+    fun icon(isSelected: Boolean): ImageVector = outlinedIcon
 }
 
 enum class ThemePreference {

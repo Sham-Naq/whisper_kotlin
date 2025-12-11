@@ -52,6 +52,11 @@ import com.example.whisper_kotlin.navigation.ThemePreference
 import com.example.whisper_kotlin.navigation.bottomTabOrder
 import com.example.whisper_kotlin.recorder.RecorderCommand
 
+enum class SettingsScreen {
+    ManageModels,
+    ManageFiles
+}
+
 @OptIn(
     ExperimentalAnimationApi::class,
     ExperimentalMaterial3Api::class
@@ -63,6 +68,7 @@ fun HomeScreen(
 ) {
     var activeTab by rememberSaveable { mutableStateOf(BottomTab.Transcription) }
     var detailEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var settingsScreen by rememberSaveable { mutableStateOf<SettingsScreen?>(null) }
 
     val disabledTabs = remember { setOf(BottomTab.Chats) }
     val navigableTabs = remember(disabledTabs) { bottomTabOrder.filterNot { it in disabledTabs } }
@@ -104,11 +110,14 @@ fun HomeScreen(
         uiState.folders.firstOrNull { it.id == folderId }
     }
     val isInFolder = uiState.currentFolderId != null
+    val isDetailTranscribing = detailEntry?.status == TranscriptionStatus.Pending && uiState.isTranscribing
 
     val displayedTab = if (isRecorderSheetVisible) BottomTab.Recorder else activeTab
 
     val currentHeader = when {
         detailEntry != null -> "Transcript"
+        settingsScreen == SettingsScreen.ManageModels -> "Manage Models"
+        settingsScreen == SettingsScreen.ManageFiles -> "Manage Files"
         displayedTab == BottomTab.Transcription && currentFolder != null -> currentFolder.name
         else -> displayedTab.topBar
     }
@@ -116,21 +125,26 @@ fun HomeScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val openTranscription: (Long) -> Unit = { id ->
-        activeTab = BottomTab.Transcription
         detailEntryId = id
         isRecorderSheetVisible = false
     }
 
     BackHandler(enabled = detailEntry != null) {
-        detailEntryId = null
+        if (!isDetailTranscribing) {
+            detailEntryId = null
+        }
     }
 
     BackHandler(enabled = isRecorderSheetVisible && !isRecording && !uiState.isTranscribing) {
         isRecorderSheetVisible = false
     }
 
+    BackHandler(enabled = settingsScreen != null) {
+        settingsScreen = null
+    }
+
     val shouldReturnToTranscriptions =
-        detailEntry == null && activeTab != BottomTab.Transcription && !isRecorderSheetVisible
+        detailEntry == null && activeTab != BottomTab.Transcription && !isRecorderSheetVisible && settingsScreen == null
     if (shouldReturnToTranscriptions) {
         BackHandler {
             activeTab = BottomTab.Transcription
@@ -160,20 +174,17 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
-                HomeTopBar(
-                    currentHeader = currentHeader,
-                    detailEntry = detailEntry,
-                    isInFolder = isInFolder,
-                    activeTab = activeTab,
-                    currentFolder = currentFolder,
-                    isDark = isDark,
-                    onBackClick = { detailEntryId = null },
-                    onFolderBackClick = {
-                        val parentId = currentFolder?.parentId
-                        transcriptionViewModel.navigateToFolder(parentId)
-                    },
-                    onDeleteClick = { showDeleteDialog = true }
-                )
+                if (!(displayedTab == BottomTab.Settings && settingsScreen != null)) {
+                    HomeTopBar(
+                        currentHeader = currentHeader,
+                        isInFolder = isInFolder,
+                        activeTab = activeTab,
+                        onFolderBackClick = {
+                            val parentId = currentFolder?.parentId
+                            transcriptionViewModel.navigateToFolder(parentId)
+                        }
+                    )
+                }
             },
             bottomBar = {
                 // Only show bottom bar when not viewing detail
@@ -195,6 +206,7 @@ fun HomeScreen(
                                     tab !in disabledTabs -> {
                                         isRecorderSheetVisible = false
                                         detailEntryId = null
+                                        settingsScreen = null
                                         activeTab = tab
                                         // When clicking Transcription tab while in a folder, go to root
                                         if (tab == BottomTab.Transcription && isInFolder) {
@@ -254,6 +266,8 @@ fun HomeScreen(
                         },
                         themePreference = themePreference,
                         onThemePreferenceChange = onThemePreferenceChange,
+                        settingsScreen = settingsScreen,
+                        onSettingsScreenChange = { settingsScreen = it },
                         onOpenTranscription = { id ->
                             openTranscription(id)
                         }
@@ -323,10 +337,23 @@ fun HomeScreen(
         }
 
             if (detailEntry != null) {
-                val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                val detailSheetState = rememberModalBottomSheetState(
+                    skipPartiallyExpanded = true,
+                    confirmValueChange = { targetState ->
+                        if (targetState == androidx.compose.material3.SheetValue.Hidden && isDetailTranscribing) {
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                )
 
                 ModalBottomSheet(
-                    onDismissRequest = { detailEntryId = null },
+                    onDismissRequest = {
+                        if (!isDetailTranscribing) {
+                            detailEntryId = null
+                        }
+                    },
                     sheetState = detailSheetState,
                     containerColor = MaterialTheme.colorScheme.background,
                     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -360,12 +387,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(MaterialTheme.colorScheme.background),
-                            viewModel = transcriptionViewModel,
-                            onBack = { detailEntryId = null },
-                            onDelete = {
-                                transcriptionViewModel.deleteTranscription(context, detailEntry.id)
-                                detailEntryId = null
-                            }
+                            viewModel = transcriptionViewModel
                         )
                     }
                 }
@@ -377,14 +399,9 @@ fun HomeScreen(
 @Composable
 private fun HomeTopBar(
     currentHeader: String,
-    detailEntry: SavedTranscription?,
     isInFolder: Boolean,
     activeTab: BottomTab,
-    currentFolder: Folder?,
-    isDark: Boolean,
-    onBackClick: () -> Unit,
-    onFolderBackClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onFolderBackClick: () -> Unit
 ) {
     val topBarColor = MaterialTheme.colorScheme.background
 
@@ -399,28 +416,11 @@ private fun HomeTopBar(
             containerColor = topBarColor
         ),
         navigationIcon = {
-            if (detailEntry != null) {
-                IconButton(onClick = onBackClick) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowBack,
-                        contentDescription = "Back"
-                    )
-                }
-            } else if (isInFolder && activeTab == BottomTab.Transcription) {
+            if (isInFolder && activeTab == BottomTab.Transcription) {
                 IconButton(onClick = onFolderBackClick) {
                     Icon(
                         imageVector = Icons.Filled.ArrowBack,
                         contentDescription = "Back to parent folder"
-                    )
-                }
-            }
-        },
-        actions = {
-            if (detailEntry != null) {
-                IconButton(onClick = onDeleteClick) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = "Delete transcription"
                     )
                 }
             }
@@ -474,19 +474,12 @@ private fun HomeBottomBar(
                             // Transparent placeholder for recorder (actual button overlaid)
                             Spacer(modifier = Modifier.size(recorderCircleSize))
                         } else {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            ) {
-                                Icon(
-                                    tab.icon(isSelected),
-                                    contentDescription = tab.header,
-                                    modifier = Modifier.size(28.dp),
-                                    tint = animatedColor
-                                )
-
-                            }
+                            Icon(
+                                tab.icon(isSelected),
+                                contentDescription = tab.header,
+                                modifier = Modifier.size(28.dp),
+                                tint = animatedColor
+                            )
                         }
                     },
                     selected = isSelected,
@@ -589,6 +582,8 @@ private fun TabContent(
     onRecordingStateChanged: (Boolean) -> Unit,
     themePreference: ThemePreference,
     onThemePreferenceChange: (ThemePreference) -> Unit,
+    settingsScreen: SettingsScreen?,
+    onSettingsScreenChange: (SettingsScreen?) -> Unit,
     onOpenTranscription: (Long) -> Unit
 ) {
     when (tab) {
@@ -646,67 +641,36 @@ private fun TabContent(
         }
 
         BottomTab.Settings -> {
-            SettingsScreen(
-                modifier = Modifier.fillMaxSize(),
-                textColor = primaryTextColor,
-                themePreference = themePreference,
-                onThemePreferenceChange = onThemePreferenceChange,
-                selectedModel = selectedModel,
-                transcriptionViewModel = transcriptionViewModel,
-                onSelectModel = onSelectModel
-            )
-        }
-    }
-}
-
-@Composable
-private fun DetailOverlay(
-    detailEntry: SavedTranscription?,
-    primaryTextColor: androidx.compose.ui.graphics.Color,
-    transcriptionViewModel: TranscriptionViewModel,
-    context: Context,
-    onBack: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val entry = detailEntry
-    if (entry != null) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Respect the top bar height
-            Spacer(modifier = Modifier.height(54.dp))
-
-            TranscriptionDetailScreen(
-                entry = entry,
-                textColor = primaryTextColor,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
-                viewModel = transcriptionViewModel,
-                onBack = onBack,
-                onDelete = onDelete
-            )
-        }
-    } else {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Respect the top bar height
-            Spacer(modifier = Modifier.height(54.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    BasicText(
-                        text = "Transcription not found.",
-                        style = TextStyle(color = primaryTextColor)
+            when (settingsScreen) {
+                SettingsScreen.ManageModels -> {
+                    ManageModelsScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = primaryTextColor,
+                        selectedModel = selectedModel,
+                        onSelectModel = onSelectModel,
+                        onBack = { onSettingsScreenChange(null) }
                     )
-                    ActionButton(label = "Back", color = primaryTextColor) {
-                        onBack()
-                    }
+                }
+                SettingsScreen.ManageFiles -> {
+                    ManageFilesScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = primaryTextColor,
+                        transcriptionViewModel = transcriptionViewModel,
+                        onBack = { onSettingsScreenChange(null) }
+                    )
+                }
+                null -> {
+                    SettingsScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = primaryTextColor,
+                        themePreference = themePreference,
+                        onThemePreferenceChange = onThemePreferenceChange,
+                        selectedModel = selectedModel,
+                        transcriptionViewModel = transcriptionViewModel,
+                        onSelectModel = onSelectModel,
+                        onNavigateToManageModels = { onSettingsScreenChange(SettingsScreen.ManageModels) },
+                        onNavigateToManageFiles = { onSettingsScreenChange(SettingsScreen.ManageFiles) }
+                    )
                 }
             }
         }

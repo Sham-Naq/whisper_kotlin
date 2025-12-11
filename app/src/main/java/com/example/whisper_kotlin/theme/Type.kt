@@ -1,5 +1,3 @@
-
-
 package com.example.whisper_kotlin.theme
 
 import androidx.compose.material3.Typography
