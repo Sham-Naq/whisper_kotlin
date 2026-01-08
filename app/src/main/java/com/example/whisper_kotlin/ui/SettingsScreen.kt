@@ -114,23 +114,40 @@ fun SettingsScreen(
             fontWeight = FontWeight.Medium
         )
 
-        // Manage Models item
-        SettingsMenuItem(
-            icon = Icons.Outlined.Memory,
-            title = "Manage Models",
-            subtitle = "${downloadedModels.size} model${if (downloadedModels.size != 1) "s" else ""} • ${formatFileSize(totalModelsSize)}",
-            textColor = textColor,
-            onClick = onNavigateToManageModels
-        )
+        // Storage card with both items
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
+            // Manage Models item
+            SettingsMenuItem(
+                icon = Icons.Outlined.Memory,
+                title = "Manage Models",
+                subtitle = "${downloadedModels.size} model${if (downloadedModels.size != 1) "s" else ""} • ${formatFileSize(totalModelsSize)}",
+                textColor = textColor,
+                onClick = onNavigateToManageModels,
+                showBackground = false
+            )
 
-        // Manage Files item
-        SettingsMenuItem(
-            icon = Icons.Outlined.Folder,
-            title = "Manage Files",
-            subtitle = "$transcriptionCount recording${if (transcriptionCount != 1) "s" else ""} • ${formatFileSize(audioFilesSize)}",
-            textColor = textColor,
-            onClick = onNavigateToManageFiles
-        )
+            // Divider
+            Divider(
+                color = textColor.copy(alpha = 0.1f),
+                thickness = 1.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            // Manage Files item
+            SettingsMenuItem(
+                icon = Icons.Outlined.Folder,
+                title = "Manage Files",
+                subtitle = "$transcriptionCount recording${if (transcriptionCount != 1) "s" else ""} • ${formatFileSize(audioFilesSize)}",
+                textColor = textColor,
+                onClick = onNavigateToManageFiles,
+                showBackground = false
+            )
+        }
     }
 }
 
@@ -140,13 +157,21 @@ private fun SettingsMenuItem(
     title: String,
     subtitle: String,
     textColor: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    showBackground: Boolean = true
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .then(
+                if (showBackground) {
+                    Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                } else {
+                    Modifier
+                }
+            )
             .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -75,11 +75,6 @@ fun ReusableDropdown(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    color = textColor.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(8.dp)
-                )
                 .background(
                     color = Color.Transparent,
                     shape = RoundedCornerShape(8.dp)
@@ -163,13 +158,15 @@ fun ReusableDropdown(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = popupMinWidth)
+                    .width(popupMinWidth)
                     .heightIn(max = 300.dp)
                     .background(cardBg, RoundedCornerShape(12.dp))
                     .border(1.dp, borderColor, RoundedCornerShape(12.dp))
             ) {
                 androidx.compose.foundation.lazy.LazyColumn(
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier
+                        .width(popupMinWidth)
+                        .padding(vertical = 8.dp)
                 ) {
                     item {
                         dropdownContent { expanded = false }
@@ -202,6 +199,7 @@ fun DropdownMenuItem(
 ) {
     Row(
         modifier = modifier
+            .fillMaxWidth()
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },

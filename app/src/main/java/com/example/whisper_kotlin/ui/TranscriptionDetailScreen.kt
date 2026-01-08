@@ -404,6 +404,27 @@ fun TranscriptionDetailScreen(
                             text = currentEntry.modelLabel,
                             style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
                         )
+                        if (currentEntry.languageCode != null) {
+                            Spacer(modifier = Modifier.size(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = textColor.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                BasicText(
+                                    text = currentEntry.languageCode.uppercase(),
+                                    style = TextStyle(
+                                        color = textColor.copy(alpha = 0.65f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                )
+                            }
+                        }
                     }
                     // Playback indicator with green dot
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1012,6 +1033,27 @@ fun EmbeddedTranscriptionDetail(
                         text = modelLabelToShow,
                         style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
                     )
+                    if (entry?.languageCode != null) {
+                        Spacer(modifier = Modifier.size(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = textColor.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BasicText(
+                                text = entry.languageCode,
+                                style = TextStyle(
+                                    color = textColor.copy(alpha = 0.65f),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            )
+                        }
+                    }
                 }
                 // Status indicator - blue like TranscriptionDetailScreen, but show state
                 Row(verticalAlignment = Alignment.CenterVertically) {

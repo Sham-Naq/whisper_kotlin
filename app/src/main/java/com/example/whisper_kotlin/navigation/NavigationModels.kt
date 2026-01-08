@@ -29,7 +29,7 @@ enum class BottomTab(
     ),
     Transcription(
         route = "transcription",
-        header = "Files",
+        header = "Manage",
         topBar = "Manage recordings",
         filledIcon = Icons.Filled.Folder,
         outlinedIcon = Icons.Outlined.Folder
@@ -50,8 +50,8 @@ enum class BottomTab(
     ),
     Settings(
         route = "settings",
-        header = "Settings",
-        topBar = "Settings",
+        header = "Account",
+        topBar = "Account",
         filledIcon = Icons.Filled.Settings,
         outlinedIcon = Icons.Outlined.Settings
     );

@@ -192,6 +192,44 @@ Java_com_whispercpp_java_whisper_WhisperLib_fullTranscribe(
     (*env)->ReleaseFloatArrayElements(env, audio_data, audio_data_arr, JNI_ABORT);
 }
 
+// Extended variant that accepts a language code (e.g., "en", "ur", or "auto" for detection).
+JNIEXPORT void JNICALL
+Java_com_example_whisper_1kotlin_WhisperNativeBridge_fullTranscribeWithLanguage(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint num_threads, jfloatArray audio_data, jstring language_str) {
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    jfloat *audio_data_arr = (*env)->GetFloatArrayElements(env, audio_data, NULL);
+    const jsize audio_data_length = (*env)->GetArrayLength(env, audio_data);
+
+    const char *lang_chars = language_str ? (*env)->GetStringUTFChars(env, language_str, NULL) : "auto";
+
+    struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    params.print_realtime = true;
+    params.print_progress = false;
+    params.print_timestamps = true;
+    params.print_special = false;
+    params.translate = false;
+    params.language = lang_chars ? lang_chars : "auto";
+    params.detect_language = (lang_chars == NULL) || (strcmp(lang_chars, "auto") == 0);
+    params.n_threads = num_threads;
+    params.offset_ms = 0;
+    params.no_context = true;
+    params.single_segment = false;
+
+    whisper_reset_timings(context);
+
+    if (whisper_full(context, params, audio_data_arr, audio_data_length) != 0) {
+        LOGI("Failed to run the model");
+    } else {
+        whisper_print_timings(context);
+    }
+
+    if (language_str && lang_chars) {
+        (*env)->ReleaseStringUTFChars(env, language_str, lang_chars);
+    }
+    (*env)->ReleaseFloatArrayElements(env, audio_data, audio_data_arr, JNI_ABORT);
+}
+
 JNIEXPORT jint JNICALL
 Java_com_whispercpp_java_whisper_WhisperLib_getTextSegmentCount(
         JNIEnv *env, jobject thiz, jlong context_ptr) {

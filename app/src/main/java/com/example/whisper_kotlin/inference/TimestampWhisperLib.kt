@@ -31,7 +31,7 @@ class TimestampWhisperContext private constructor(private var ptr: Long) {
     private val lock = Any()
 
     @Throws(ExecutionException::class, InterruptedException::class)
-    fun transcribeData(data: FloatArray): WhisperTranscription {
+    fun transcribeData(data: FloatArray, languageCode: String? = null): WhisperTranscription {
         return executor.submit(Callable {
             if (ptr == 0L) {
                 error("Attempt to transcribe using a released context")
@@ -39,7 +39,8 @@ class TimestampWhisperContext private constructor(private var ptr: Long) {
             val numThreads = WhisperCpuConfig.getPreferredThreadCount()
             Log.d(TIMESTAMP_LOG_TAG, "Selecting $numThreads threads")
             synchronized(lock) {
-                WhisperLib.fullTranscribe(ptr, numThreads, data)
+                val language = languageCode ?: "auto"
+                WhisperNativeBridge.fullTranscribeWithLanguage(ptr, numThreads, data, language)
                 val textCount = WhisperLib.getTextSegmentCount(ptr)
                 val plainBuilder = StringBuilder()
                 val timestampBuilder = StringBuilder()
@@ -148,4 +149,23 @@ private fun toTimestamp(t: Long): String {
     } else {
         String.format("%d:%02d", minutes, seconds)
     }
+}
+
+/**
+ * Native bridge that mirrors the existing whisper.cpp JNI bindings but allows specifying language per call.
+ * It reuses the same native library already loaded by com.whispercpp.java.whisper.WhisperLib.
+ */
+private object WhisperNativeBridge {
+    init {
+        // Ensure the whisper native library is loaded via the same loader logic
+        // used by WhisperLib (CPU-specific variants, etc.) before invoking our
+        // custom JNI entrypoint.
+        try {
+            WhisperLib.getSystemInfo()
+        } catch (t: Throwable) {
+            Log.w(TIMESTAMP_LOG_TAG, "Failed to pre-load whisper library", t)
+        }
+    }
+
+    external fun fullTranscribeWithLanguage(contextPtr: Long, numThreads: Int, audioData: FloatArray, language: String)
 }

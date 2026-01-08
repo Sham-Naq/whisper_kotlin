@@ -576,14 +576,37 @@ private fun RecordingItem(
                     .format(java.util.Date(entry.timestamp))
                     .lowercase(Locale.ENGLISH)
             }
-            if (isTranscriptReady) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = dateText,
-                        color = textColor.copy(alpha = 0.6f),
-                        style = TextStyle(fontSize = 12.sp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = dateText,
+                    color = textColor.copy(alpha = 0.6f),
+                    style = TextStyle(fontSize = 12.sp)
+                )
+                
+                if (entry.languageCode != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = textColor.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText(
+                            text = entry.languageCode.uppercase(),
+                            style = TextStyle(
+                                color = textColor.copy(alpha = 0.7f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
+                }
+                
+                if (isTranscriptReady) {
+                    Spacer(modifier = Modifier.width(6.dp))
                     Icon(
                         imageVector = Icons.Filled.ChatBubble,
                         contentDescription = "Transcript ready",
@@ -591,12 +614,6 @@ private fun RecordingItem(
                         modifier = Modifier.size(14.dp)
                     )
                 }
-            } else {
-                Text(
-                    text = dateText,
-                    color = textColor.copy(alpha = 0.6f),
-                    style = TextStyle(fontSize = 12.sp)
-                )
             }
         }
 

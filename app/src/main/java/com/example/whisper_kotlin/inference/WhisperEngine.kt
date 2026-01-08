@@ -70,32 +70,35 @@ object WhisperEngine {
     fun transcribeWavAsset(
         context: Context,
         wavAssetPath: String,
-        onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)? = null
+        onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)? = null,
+        languageCode: String? = null
     ): WhisperTranscription =
         context.assets.open(wavAssetPath).use { input ->
             val (_, samples) = WavReader.readPcm16Mono16k(input)
-            transcribeSamples(samples, onProgress)
+            transcribeSamples(samples, onProgress, languageCode)
         }
 
     /** Transcribe 16k mono PCM16 WAV from an absolute file path. */
     @RequiresApi(Build.VERSION_CODES.O)
     fun transcribeWavFile(
         path: String,
-        onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)? = null
+        onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)? = null,
+        languageCode: String? = null
     ): WhisperTranscription =
         java.io.File(path).inputStream().use { input ->
             val (_, samples) = WavReader.readPcm16Mono16k(input)
-            transcribeSamples(samples, onProgress)
+            transcribeSamples(samples, onProgress, languageCode)
         }
 
     private fun transcribeSamples(
         samples: FloatArray,
-        onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)?
+        onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)?,
+        languageCode: String?
     ): WhisperTranscription {
         val context = ctx ?: error("Model not loaded. Call loadModelFromAssets() first.")
         if (samples.size <= MAX_CHUNK_SAMPLES) {
             onProgress?.invoke(0, 1)
-            val result = context.transcribeData(samples)
+            val result = context.transcribeData(samples, languageCode)
             onProgress?.invoke(1, 1)
             return result
         }
@@ -110,7 +113,7 @@ object WhisperEngine {
         var processedChunks = 0
         for (chunk in chunks) {
             val chunkSamples = samples.copyOfRange(chunk.start, chunk.endExclusive)
-            val result = context.transcribeData(chunkSamples)
+            val result = context.transcribeData(chunkSamples, languageCode)
             val offsetTicks = chunk.start.toLong() / SAMPLES_PER_TICK
             for (segment in result.segments) {
                 val adjustedT0 = segment.t0 + offsetTicks

@@ -49,7 +49,8 @@ data class SavedTranscription(
     // Optional folder containment; null means it appears at the root level
     val folderId: Long? = null,
     val status: TranscriptionStatus = TranscriptionStatus.Completed,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val languageCode: String? = null
 )
 
 @Serializable
@@ -253,6 +254,7 @@ class TranscriptionViewModel(
         appContext: Context,
         selectedModel: ModelOption?,
         audioSource: AudioSource,
+        languageCode: String? = null,
         onProgress: ((processedChunks: Int, totalChunks: Int) -> Unit)? = null
     ): TranscriptionRun {
         val chosen = selectedModel
@@ -274,9 +276,10 @@ class TranscriptionViewModel(
             is AudioSource.Asset -> WhisperEngine.transcribeWavAsset(
                 appContext,
                 audioSource.assetPath,
-                onProgress
+                onProgress,
+                languageCode
             )
-            is AudioSource.File -> WhisperEngine.transcribeWavFile(audioSource.path, onProgress)
+            is AudioSource.File -> WhisperEngine.transcribeWavFile(audioSource.path, onProgress, languageCode)
         }
         val elapsedMs = SystemClock.elapsedRealtime() - startMs
         return TranscriptionRun(
@@ -293,7 +296,8 @@ class TranscriptionViewModel(
         audioSource: AudioSource,
         isModelDownloading: Boolean,
         transcriptionName: String? = null,
-        targetFolderId: Long? = null
+        targetFolderId: Long? = null,
+        languageCode: String? = null
     ) {
         val appContext = context.applicationContext
         if (isModelDownloading) {
@@ -343,12 +347,13 @@ class TranscriptionViewModel(
                     transcriptionDurationMs = 0L,
                     folderId = targetFolderId,
                     status = TranscriptionStatus.Pending,
-                    errorMessage = null
+                    errorMessage = null,
+                    languageCode = languageCode
                 )
                 placeholderId = pendingEntry.id
                 saveTranscriptionEntry(pendingEntry)
 
-                val result = performTranscription(appContext, selectedModel, AudioSource.File(audioPath)) { processed, total ->
+                val result = performTranscription(appContext, selectedModel, AudioSource.File(audioPath), languageCode) { processed, total ->
                     updateProgress("Transcribing…", processed, total)
                 }
                 val timeLine = "Completed in " + String.format(java.util.Locale.US, "%.1f", result.elapsedMs / 1000.0) + " s (" + result.elapsedMs + " ms)"
@@ -404,7 +409,13 @@ class TranscriptionViewModel(
         val entrySnapshot = entry
         val appContext = context.applicationContext
         val source = AudioSource.File(audioFile.absolutePath)
-        val option = selectedModel ?: modelOptionFromLabel(entrySnapshot.modelLabel)
+        // If no model is explicitly selected, try to use the entry's model, or fall back to a default
+        val option = selectedModel ?: modelOptionFromLabel(entrySnapshot.modelLabel) ?: run {
+            // Fallback: use first available model or null (which will use asset model)
+            ModelManager.availableModels().firstOrNull()?.let { spec ->
+                ModelOption(id = spec.id, fileName = spec.fileName, url = spec.url)
+            }
+        }
 
         currentTranscriptionJob?.cancel()
         currentTranscriptionJob = viewModelScope.launch(ioDispatcher) {
@@ -421,7 +432,7 @@ class TranscriptionViewModel(
                     existing.copy(status = TranscriptionStatus.Pending, errorMessage = null)
                 }
 
-                val result = performTranscription(appContext, option, source) { processed, total ->
+                val result = performTranscription(appContext, option, source, entrySnapshot.languageCode) { processed, total ->
                     updateProgress("Re-transcribing ${entrySnapshot.fileLabel}…", processed, total)
                 }
                 val updatedEntry = entrySnapshot.copy(

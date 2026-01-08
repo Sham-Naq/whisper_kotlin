@@ -43,6 +43,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Home
@@ -116,6 +117,7 @@ fun RecorderScreen(
     var wavFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var isRecordedAudio by rememberSaveable { mutableStateOf(false) }
     var recordingElapsedSeconds by rememberSaveable { mutableStateOf(0) }
+    var selectedLanguageCode by rememberSaveable { mutableStateOf("en") }
 
     fun currentRawFile(): File? = rawFilePath?.let { File(it) }?.takeIf { it.exists() }
     fun currentWavFile(): File? = wavFilePath?.let { File(it) }?.takeIf { it.exists() }
@@ -399,7 +401,8 @@ fun RecorderScreen(
                     audioSource = AudioSource.File(recordedFile.absolutePath),
                     isModelDownloading = isModelDownloading,
                     transcriptionName = transcriptionName,
-                    targetFolderId = selectedFolderId
+                    targetFolderId = selectedFolderId,
+                    languageCode = selectedLanguageCode
                 )
             }
         }
@@ -938,67 +941,162 @@ fun RecorderScreen(
                                     )
                                 }
                             } else {
+                                ReusableDropdown(
+                                    label = "",
+                                    selectedText = when {
+                                        modelDownloadState.selectedModel != null -> "${modelDownloadState.selectedModel!!.id}"
+                                        selectedModel != null -> "${selectedModel.id}"
+                                        else -> "tiny"
+                                    },
+                                    textColor = textColor,
+                                    isDark = isDark,
+                                    modifier = Modifier.weight(1f),
+                                    enabled = true
+                                ) { closeMenu ->
+                                    val options = remember {
+                                        ModelManager.availableModels().map { spec ->
+                                            ModelOption(
+                                                id = spec.id,
+                                                fileName = spec.fileName,
+                                                url = spec.url
+                                            )
+                                        }
+                                    }
+
+                                    options.forEach { opt ->
+                                        val isDownloaded =
+                                            ModelManager.isModelPresent(context, opt.fileName)
+                                        DropdownMenuItem(
+                                            text = opt.id,
+                                            textColor = textColor,
+                                            onClick = {
+                                                if (isDownloaded) {
+                                                    onSelectModel(opt)
+                                                    modelDownloadVm.selectIfPresent(context, opt)
+                                                    closeMenu()
+                                                } else {
+                                                    onModelDownloadingChanged(true)
+                                                    modelDownloadVm.startDownloadOrSelect(context, opt)
+                                                    closeMenu()
+                                                }
+                                            },
+                                            enabled = modelDownloadState.downloadingId == null,
+                                            trailingIcon = {
+                                                if (isDownloaded) {
+                                                    Icon(
+                                                        imageVector = androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                                                        contentDescription = "Downloaded",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = androidx.compose.material.icons.Icons.Filled.AccessTime,
+                                                        contentDescription = "Not downloaded",
+                                                        tint = textColor.copy(alpha = 0.4f),
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Divider
+                        androidx.compose.material.Divider(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = textColor.copy(alpha = 0.1f),
+                            thickness = 0.5.dp
+                        )
+
+                        // Language selection
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Filled.Public,
+                                contentDescription = null,
+                                tint = textColor.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .offset(y = 1.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             ReusableDropdown(
                                 label = "",
-                                selectedText = when {
-                                    modelDownloadState.selectedModel != null -> "${modelDownloadState.selectedModel!!.id}"
-                                    selectedModel != null -> "${selectedModel.id}"
-                                    else -> "tiny"
+                                selectedText = when (selectedLanguageCode) {
+                                    "es" -> "Spanish"
+                                    "fr" -> "French"
+                                    "de" -> "German"
+                                    "ru" -> "Russian"
+                                    "ur" -> "Urdu"
+                                    else -> "English"
                                 },
                                 textColor = textColor,
                                 isDark = isDark,
                                 modifier = Modifier.weight(1f),
                                 enabled = true
                             ) { closeMenu ->
-                                val options = remember {
-                                    ModelManager.availableModels().map { spec ->
-                                        ModelOption(
-                                            id = spec.id,
-                                            fileName = spec.fileName,
-                                            url = spec.url
-                                        )
-                                    }
-                                }
-
-                                options.forEach { opt ->
-                                    val isDownloaded =
-                                        ModelManager.isModelPresent(context, opt.fileName)
-                                    DropdownMenuItem(
-                                        text = opt.id,
-                                        textColor = textColor,
-                                        onClick = {
-                                            if (isDownloaded) {
-                                                onSelectModel(opt)
-                                                modelDownloadVm.selectIfPresent(context, opt)
-                                                closeMenu()
-                                            } else {
-                                                onModelDownloadingChanged(true)
-                                                modelDownloadVm.startDownloadOrSelect(context, opt)
-                                                closeMenu()
-                                            }
-                                        },
-                                        enabled = modelDownloadState.downloadingId == null,
-                                        trailingIcon = {
-                                            if (isDownloaded) {
-                                                Icon(
-                                                    imageVector = androidx.compose.material.icons.Icons.Filled.PlayArrow,
-                                                    contentDescription = "Downloaded",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            } else {
-                                                Icon(
-                                                    imageVector = androidx.compose.material.icons.Icons.Filled.AccessTime,
-                                                    contentDescription = "Not downloaded",
-                                                    tint = textColor.copy(alpha = 0.4f),
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
+                                DropdownMenuItem(
+                                    text = "English",
+                                    textColor = textColor,
+                                    onClick = {
+                                        selectedLanguageCode = "en"
+                                        closeMenu()
+                                    },
+                                    enabled = true
+                                )
+                                DropdownMenuItem(
+                                    text = "Urdu",
+                                    textColor = textColor,
+                                    onClick = {
+                                        selectedLanguageCode = "ur"
+                                        closeMenu()
+                                    },
+                                    enabled = true
+                                )
+                                DropdownMenuItem(
+                                    text = "Spanish",
+                                    textColor = textColor,
+                                    onClick = {
+                                        selectedLanguageCode = "es"
+                                        closeMenu()
+                                    },
+                                    enabled = true
+                                )
+                                DropdownMenuItem(
+                                    text = "French",
+                                    textColor = textColor,
+                                    onClick = {
+                                        selectedLanguageCode = "fr"
+                                        closeMenu()
+                                    },
+                                    enabled = true
+                                )
+                                DropdownMenuItem(
+                                    text = "German",
+                                    textColor = textColor,
+                                    onClick = {
+                                        selectedLanguageCode = "de"
+                                        closeMenu()
+                                    },
+                                    enabled = true
+                                )
+                                DropdownMenuItem(
+                                    text = "Russian",
+                                    textColor = textColor,
+                                    onClick = {
+                                        selectedLanguageCode = "ru"
+                                        closeMenu()
+                                    },
+                                    enabled = true
+                                )
                             }
-                            } // end else for download state
                         }
 
                         // Divider

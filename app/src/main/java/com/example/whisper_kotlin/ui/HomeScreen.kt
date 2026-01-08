@@ -23,6 +23,7 @@ import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -336,62 +337,79 @@ fun HomeScreen(
             }
         }
 
-            if (detailEntry != null) {
-                val detailSheetState = rememberModalBottomSheetState(
-                    skipPartiallyExpanded = true,
-                    confirmValueChange = { targetState ->
-                        if (targetState == androidx.compose.material3.SheetValue.Hidden && isDetailTranscribing) {
-                            false
-                        } else {
-                            true
-                        }
-                    }
-                )
+        if (detailEntry != null) {
+            val detailSheetState = rememberModalBottomSheetState(
+                skipPartiallyExpanded = true,
+                confirmValueChange = { targetState ->
+                    // Prevent the sheet from being dismissed via swipe or scrim; it will
+                    // only be closed explicitly via the close button we provide.
+                    targetState != androidx.compose.material3.SheetValue.Hidden
+                }
+            )
 
-                ModalBottomSheet(
-                    onDismissRequest = {
-                        if (!isDetailTranscribing) {
-                            detailEntryId = null
-                        }
-                    },
-                    sheetState = detailSheetState,
-                    containerColor = MaterialTheme.colorScheme.background,
-                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                    dragHandle = {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp, bottom = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(48.dp)
-                                    .height(5.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
-                            )
-                        }
-                    },
-                    scrimColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)
-                ) {
+            ModalBottomSheet(
+                onDismissRequest = {
+                    // With confirmValueChange blocking Hidden, this should not be
+                    // invoked by swipe, but keep the guard for safety.
+                    if (!isDetailTranscribing) {
+                        detailEntryId = null
+                    }
+                },
+                sheetState = detailSheetState,
+                containerColor = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                dragHandle = {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .fillMaxHeight(0.9f)
-                            .navigationBarsPadding()
+                            .padding(top = 8.dp, bottom = 12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        TranscriptionDetailScreen(
-                            entry = detailEntry,
-                            textColor = primaryTextColor,
+                        Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.background),
-                            viewModel = transcriptionViewModel
+                                .width(48.dp)
+                                .height(5.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+                        )
+                    }
+                },
+                scrimColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.9f)
+                        .navigationBarsPadding()
+                ) {
+                    TranscriptionDetailScreen(
+                        entry = detailEntry,
+                        textColor = primaryTextColor,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                        viewModel = transcriptionViewModel
+                    )
+
+                    IconButton(
+                        onClick = {
+                            if (!isDetailTranscribing) {
+                                detailEntryId = null
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Close",
+                            tint = primaryTextColor
                         )
                     }
                 }
             }
+        }
     }
 }
 
@@ -474,12 +492,36 @@ private fun HomeBottomBar(
                             // Transparent placeholder for recorder (actual button overlaid)
                             Spacer(modifier = Modifier.size(recorderCircleSize))
                         } else {
-                            Icon(
-                                tab.icon(isSelected),
-                                contentDescription = tab.header,
-                                modifier = Modifier.size(28.dp),
-                                tint = animatedColor
-                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(top = 12.dp)
+                            ) {
+                                Icon(
+                                    tab.icon(isSelected),
+                                    contentDescription = tab.header,
+                                    modifier = Modifier.size(28.dp),
+                                    tint = animatedColor
+                                )
+                                // "Coming Soon" badge for Chats tab
+                                if (tab == BottomTab.Chats) {
+                                    Box(
+                                        modifier = Modifier
+                                            .offset(y = (-18).dp)
+                                            .background(
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                                shape = RoundedCornerShape(6.dp)
+                                            )
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = "Coming Soon",
+                                            color = MaterialTheme.colorScheme.surface,
+                                            fontSize = 7.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
                         }
                     },
                     selected = isSelected,
