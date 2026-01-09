@@ -55,7 +55,9 @@ import com.example.whisper_kotlin.recorder.RecorderCommand
 
 enum class SettingsScreen {
     ManageModels,
-    ManageFiles
+    ManageFiles,
+    AppFeatures,
+    PrivacyPolicy
 }
 
 @OptIn(
@@ -119,6 +121,8 @@ fun HomeScreen(
         detailEntry != null -> "Transcript"
         settingsScreen == SettingsScreen.ManageModels -> "Manage Models"
         settingsScreen == SettingsScreen.ManageFiles -> "Manage Files"
+        settingsScreen == SettingsScreen.AppFeatures -> "App Features"
+        settingsScreen == SettingsScreen.PrivacyPolicy -> "Privacy Policy"
         displayedTab == BottomTab.Transcription && currentFolder != null -> currentFolder.name
         else -> displayedTab.topBar
     }
@@ -400,6 +404,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(top = 8.dp, end = 16.dp)
+                            .offset(y = -6 .dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Close,
@@ -493,8 +498,7 @@ private fun HomeBottomBar(
                             Spacer(modifier = Modifier.size(recorderCircleSize))
                         } else {
                             Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(top = 12.dp)
+                                contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     tab.icon(isSelected),
@@ -506,12 +510,13 @@ private fun HomeBottomBar(
                                 if (tab == BottomTab.Chats) {
                                     Box(
                                         modifier = Modifier
-                                            .offset(y = (-18).dp)
+                                            .align(Alignment.TopCenter)
+                                            .offset(y = (-12).dp)
                                             .background(
                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                                                shape = RoundedCornerShape(6.dp)
+                                                shape = RoundedCornerShape(16.dp)
                                             )
-                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            .padding(horizontal = 4.dp)
                                     ) {
                                         Text(
                                             text = "Coming Soon",
@@ -701,6 +706,18 @@ private fun TabContent(
                         onBack = { onSettingsScreenChange(null) }
                     )
                 }
+                SettingsScreen.AppFeatures -> {
+                    AppFeaturesScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = primaryTextColor
+                    )
+                }
+                SettingsScreen.PrivacyPolicy -> {
+                    PrivacyPolicyScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = primaryTextColor
+                    )
+                }
                 null -> {
                     SettingsScreen(
                         modifier = Modifier.fillMaxSize(),
@@ -711,7 +728,9 @@ private fun TabContent(
                         transcriptionViewModel = transcriptionViewModel,
                         onSelectModel = onSelectModel,
                         onNavigateToManageModels = { onSettingsScreenChange(SettingsScreen.ManageModels) },
-                        onNavigateToManageFiles = { onSettingsScreenChange(SettingsScreen.ManageFiles) }
+                        onNavigateToManageFiles = { onSettingsScreenChange(SettingsScreen.ManageFiles) },
+                        onNavigateToAppFeatures = { onSettingsScreenChange(SettingsScreen.AppFeatures) },
+                        onNavigateToPrivacyPolicy = { onSettingsScreenChange(SettingsScreen.PrivacyPolicy) }
                     )
                 }
             }

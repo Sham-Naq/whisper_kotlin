@@ -16,7 +16,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +63,9 @@ fun SettingsScreen(
     transcriptionViewModel: TranscriptionViewModel? = null,
     onSelectModel: ((ModelOption) -> Unit)? = null,
     onNavigateToManageModels: () -> Unit = {},
-    onNavigateToManageFiles: () -> Unit = {}
+    onNavigateToManageFiles: () -> Unit = {},
+    onNavigateToAppFeatures: () -> Unit = {},
+    onNavigateToPrivacyPolicy: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -145,6 +149,47 @@ fun SettingsScreen(
                 subtitle = "$transcriptionCount recording${if (transcriptionCount != 1) "s" else ""} • ${formatFileSize(audioFilesSize)}",
                 textColor = textColor,
                 onClick = onNavigateToManageFiles,
+                showBackground = false
+            )
+        }
+
+        // Information section header
+        Text(
+            text = "Information",
+            color = textColor.copy(alpha = 0.7f),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+
+        // Information card
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
+            SettingsMenuItem(
+                icon = Icons.Outlined.Info,
+                title = "App Features",
+                subtitle = "Learn about what makes this app special",
+                textColor = textColor,
+                onClick = onNavigateToAppFeatures,
+                showBackground = false
+            )
+
+            // Divider
+            Divider(
+                color = textColor.copy(alpha = 0.1f),
+                thickness = 1.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            SettingsMenuItem(
+                icon = Icons.Outlined.PrivacyTip,
+                title = "Privacy Policy",
+                subtitle = "How we protect your data and privacy",
+                textColor = textColor,
+                onClick = onNavigateToPrivacyPolicy,
                 showBackground = false
             )
         }

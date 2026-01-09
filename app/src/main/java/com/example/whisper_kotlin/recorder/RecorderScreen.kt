@@ -102,10 +102,10 @@ fun RecorderScreen(
     audioSource: AudioSource,
     onAudioSourceChanged: (AudioSource) -> Unit,
     transcriptionViewModel: TranscriptionViewModel,
-    command: RecorderCommand? = null,
-    onCommandHandled: () -> Unit = {},
-    onRecordingStateChanged: (Boolean) -> Unit = {},
-    onViewTranscription: (Long) -> Unit = {}
+    command: RecorderCommand?,
+    onCommandHandled: () -> Unit,
+    onRecordingStateChanged: (Boolean) -> Unit,
+    onViewTranscription: (Long) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current

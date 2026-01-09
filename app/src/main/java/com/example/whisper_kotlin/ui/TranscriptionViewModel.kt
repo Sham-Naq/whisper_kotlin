@@ -561,6 +561,58 @@ class TranscriptionViewModel(
         return _uiState.value.savedTranscriptions.firstOrNull { it.id == entryId }
     }
 
+    fun renameTranscription(entryId: Long, newName: String) {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch(ioDispatcher) {
+            updateTranscriptionEntry(entryId) { existing ->
+                existing.copy(fileLabel = trimmed)
+            }
+        }
+    }
+
+    fun moveToFolder(entryId: Long, folderId: Long) {
+        viewModelScope.launch(ioDispatcher) {
+            updateTranscriptionEntry(entryId) { existing ->
+                existing.copy(folderId = folderId)
+            }
+        }
+    }
+
+    fun renameFolder(folderId: Long, newName: String) {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch(ioDispatcher) {
+            var updatedFolders: List<Folder> = emptyList()
+            _uiState.update { current ->
+                val next = current.folders.map { folder ->
+                    if (folder.id == folderId) {
+                        folder.copy(name = trimmed)
+                    } else folder
+                }
+                updatedFolders = next
+                current.copy(folders = next)
+            }
+            TranscriptionRepository.persistFolders(updatedFolders)
+        }
+    }
+
+    fun moveFolderToFolder(folderId: Long, targetFolderId: Long) {
+        viewModelScope.launch(ioDispatcher) {
+            var updatedFolders: List<Folder> = emptyList()
+            _uiState.update { current ->
+                val next = current.folders.map { folder ->
+                    if (folder.id == folderId) {
+                        folder.copy(parentId = targetFolderId)
+                    } else folder
+                }
+                updatedFolders = next
+                current.copy(folders = next)
+            }
+            TranscriptionRepository.persistFolders(updatedFolders)
+        }
+    }
+
     fun listFoldersInCurrent(): List<Folder> {
         val state = _uiState.value
         return state.folders.filter { it.parentId == state.currentFolderId }.sortedBy { it.name.lowercase() }

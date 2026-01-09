@@ -62,6 +62,19 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.DpOffset
+import android.widget.Toast
 import java.util.Locale
 
 
@@ -84,7 +97,7 @@ fun ActionButton(label: String, color: Color, enabled: Boolean = true, onClick: 
         BasicText(label, style = TextStyle(color = color, fontWeight = FontWeight.Medium))
     }
 }
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TranscriptionScreen(
     modifier: Modifier = Modifier,
@@ -105,6 +118,17 @@ fun TranscriptionScreen(
     var selectedFolderIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var selectedTranscriptionIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showDeleteSelectionDialog by remember { mutableStateOf(false) }
+    var showRecordingMenu by remember { mutableStateOf<SavedTranscription?>(null) }
+    var showEditNameDialog by remember { mutableStateOf<SavedTranscription?>(null) }
+    var editedName by remember { mutableStateOf("") }
+    var showMoveToFolderDialog by remember { mutableStateOf<SavedTranscription?>(null) }
+    var showFolderMenu by remember { mutableStateOf<Folder?>(null) }
+    var showEditFolderNameDialog by remember { mutableStateOf<Folder?>(null) }
+    var editedFolderName by remember { mutableStateOf("") }
+    var showMoveFolderDialog by remember { mutableStateOf<Folder?>(null) }
+    var pendingDeleteFolder by remember { mutableStateOf<Folder?>(null) }
+    val clipboardManager = LocalClipboardManager.current
+    val dialogBackground = MaterialTheme.colorScheme.surface
     val sectionHorizontalPadding = 12.dp
     val folderDepthResolver: (Long?) -> Int = remember(uiState.folders) {
         val folderMap = uiState.folders.associateBy { it.id }
@@ -120,7 +144,6 @@ fun TranscriptionScreen(
     
     Box(modifier = modifier) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            val dialogBackground = MaterialTheme.colorScheme.surface
             val progress = uiState.progress
 
             // Back: if a detail overlay is visible, let the parent handle it; otherwise
@@ -136,6 +159,49 @@ fun TranscriptionScreen(
                 }
             }
 
+            // Selection mode top bar
+            if (selectionMode) {
+                CenterAlignedTopAppBar(
+                    title = {
+                        val totalSelected = selectedFolderIds.size + selectedTranscriptionIds.size
+                        androidx.compose.material3.Text(
+                            text = "$totalSelected selected",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            selectionMode = false
+                            selectedFolderIds = emptySet()
+                            selectedTranscriptionIds = emptySet()
+                        }) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Cancel selection"
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                if (selectedFolderIds.isNotEmpty() || selectedTranscriptionIds.isNotEmpty()) {
+                                    showDeleteSelectionDialog = true
+                                }
+                            },
+                            enabled = selectedFolderIds.isNotEmpty() || selectedTranscriptionIds.isNotEmpty()
+                        ) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Delete selected"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            }
+
             if (uiState.isTranscribing) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     progress?.let {
@@ -144,34 +210,6 @@ fun TranscriptionScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // Selection mode controls (only show cancel and delete when in selection mode)
-            if (selectionMode) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ActionButton(label = "Cancel", color = textColor) {
-                        selectionMode = false
-                        selectedFolderIds = emptySet()
-                        selectedTranscriptionIds = emptySet()
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = {
-                        if (selectedFolderIds.isNotEmpty() || selectedTranscriptionIds.isNotEmpty()) {
-                            showDeleteSelectionDialog = true
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Icons.Filled.Delete,
-                            contentDescription = "Delete selected",
-                            tint = textColor
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Animate folder content changes
@@ -238,6 +276,8 @@ fun TranscriptionScreen(
                                         horizontalPadding = sectionHorizontalPadding,
                                         selectionMode = selectionMode,
                                         isSelected = selectedFolderIds.contains(folder.id),
+                                        showMenu = showFolderMenu == folder,
+                                        dialogBackground = dialogBackground,
                                         onFolderClick = {
                                             if (selectionMode) {
                                                 selectedFolderIds = if (selectedFolderIds.contains(folder.id))
@@ -248,12 +288,22 @@ fun TranscriptionScreen(
                                         },
                                         onFolderLongClick = {
                                             if (!selectionMode) {
-                                                selectionMode = true
-                                                selectedFolderIds = setOf(folder.id)
+                                                showFolderMenu = folder
                                             }
                                         },
                                         onSelectionChanged = { checked ->
                                             selectedFolderIds = if (checked) selectedFolderIds + folder.id else selectedFolderIds - folder.id
+                                        },
+                                        onDismissMenu = { showFolderMenu = null },
+                                        onMenuEditName = {
+                                            editedFolderName = folder.name
+                                            showEditFolderNameDialog = folder
+                                        },
+                                        onMenuMoveToFolder = {
+                                            showMoveFolderDialog = folder
+                                        },
+                                        onMenuDelete = {
+                                            pendingDeleteFolder = folder
                                         }
                                     )
                                     
@@ -286,6 +336,8 @@ fun TranscriptionScreen(
                                         textColor = textColor,
                                         selectionMode = selectionMode,
                                         isSelected = selectedTranscriptionIds.contains(entry.id),
+                                        showMenu = showRecordingMenu == entry,
+                                        dialogBackground = dialogBackground,
                                         onRecordingClick = {
                                             if (selectionMode) {
                                                 selectedTranscriptionIds = if (selectedTranscriptionIds.contains(entry.id))
@@ -296,12 +348,27 @@ fun TranscriptionScreen(
                                         },
                                         onRecordingLongClick = {
                                             if (!selectionMode) {
-                                                selectionMode = true
-                                                selectedTranscriptionIds = setOf(entry.id)
+                                                showRecordingMenu = entry
                                             }
                                         },
                                         onSelectionChanged = { checked ->
                                             selectedTranscriptionIds = if (checked) selectedTranscriptionIds + entry.id else selectedTranscriptionIds - entry.id
+                                        },
+                                        onDismissMenu = { showRecordingMenu = null },
+                                        onMenuOpen = { onOpenTranscription(entry.id) },
+                                        onMenuCopyTranscript = {
+                                            clipboardManager.setText(AnnotatedString(entry.transcript))
+                                            Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onMenuEditName = {
+                                            editedName = entry.fileLabel
+                                            showEditNameDialog = entry
+                                        },
+                                        onMenuMoveToFolder = {
+                                            showMoveToFolderDialog = entry
+                                        },
+                                        onMenuDelete = {
+                                            pendingDelete = entry
                                         }
                                     )
                                     
@@ -426,6 +493,261 @@ fun TranscriptionScreen(
                 dismissButton = { TextButton(onClick = { showDeleteSelectionDialog = false }) { Text("Cancel") } }
             )
         }
+
+        // Edit name dialog
+        val entryToEdit = showEditNameDialog
+        if (entryToEdit != null) {
+            AlertDialog(
+                onDismissRequest = { showEditNameDialog = null },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = { Text(text = "Rename", color = textColor, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    Column {
+                        Text(
+                            text = "Enter a new name for this recording.",
+                            color = textColor.copy(alpha = 0.85f)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = editedName,
+                            onValueChange = { editedName = it },
+                            singleLine = true,
+                            placeholder = { Text("New name") }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val name = editedName.trim()
+                            if (name.isNotEmpty()) {
+                                viewModel.renameTranscription(entryToEdit.id, name)
+                            }
+                            showEditNameDialog = null
+                        }
+                    ) { Text("Rename") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditNameDialog = null }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // Move to folder dialog
+        val entryToMove = showMoveToFolderDialog
+        if (entryToMove != null) {
+            val availableFolders = uiState.folders.sortedBy { it.name.lowercase() }
+            AlertDialog(
+                onDismissRequest = { showMoveToFolderDialog = null },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = { Text(text = "Move to folder", color = textColor, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    if (availableFolders.isEmpty()) {
+                        Text(
+                            text = "No folders available. Create a folder first.",
+                            color = textColor.copy(alpha = 0.85f)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            item {
+                                Text(
+                                    text = "Select a folder:",
+                                    color = textColor.copy(alpha = 0.85f),
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                            }
+                            items(availableFolders.size) { index ->
+                                val folder = availableFolders[index]
+                                TextButton(
+                                    onClick = {
+                                        viewModel.moveToFolder(entryToMove.id, folder.id)
+                                        showMoveToFolderDialog = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.FolderOpen,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(folder.name)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showMoveToFolderDialog = null }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // Edit folder name dialog
+        val folderToEdit = showEditFolderNameDialog
+        if (folderToEdit != null) {
+            AlertDialog(
+                onDismissRequest = { showEditFolderNameDialog = null },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = { Text(text = "Rename folder", color = textColor, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    Column {
+                        Text(
+                            text = "Enter a new name for this folder.",
+                            color = textColor.copy(alpha = 0.85f)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = editedFolderName,
+                            onValueChange = { editedFolderName = it },
+                            singleLine = true,
+                            placeholder = { Text("New name") }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val name = editedFolderName.trim()
+                            if (name.isNotEmpty()) {
+                                viewModel.renameFolder(folderToEdit.id, name)
+                            }
+                            showEditFolderNameDialog = null
+                        }
+                    ) { Text("Rename") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditFolderNameDialog = null }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // Move folder dialog
+        val folderToMove = showMoveFolderDialog
+        if (folderToMove != null) {
+            // Get all folder IDs that are descendants of this folder (including itself)
+            fun getDescendantIds(folderId: Long): Set<Long> {
+                val result = mutableSetOf(folderId)
+                val queue = mutableListOf(folderId)
+                while (queue.isNotEmpty()) {
+                    val current = queue.removeAt(0)
+                    uiState.folders.filter { it.parentId == current }.forEach {
+                        if (result.add(it.id)) {
+                            queue.add(it.id)
+                        }
+                    }
+                }
+                return result
+            }
+            
+            val invalidFolderIds = getDescendantIds(folderToMove.id)
+            val availableFolders = uiState.folders
+                .filter { it.id !in invalidFolderIds }
+                .sortedBy { it.name.lowercase() }
+            
+            AlertDialog(
+                onDismissRequest = { showMoveFolderDialog = null },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = { Text(text = "Move folder", color = textColor, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    if (availableFolders.isEmpty()) {
+                        Text(
+                            text = "No valid folders available. Create another folder first.",
+                            color = textColor.copy(alpha = 0.85f)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            item {
+                                Text(
+                                    text = "Select a destination folder:",
+                                    color = textColor.copy(alpha = 0.85f),
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                            }
+                            items(availableFolders.size) { index ->
+                                val folder = availableFolders[index]
+                                TextButton(
+                                    onClick = {
+                                        viewModel.moveFolderToFolder(folderToMove.id, folder.id)
+                                        showMoveFolderDialog = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.FolderOpen,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(folder.name)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showMoveFolderDialog = null }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // Delete folder dialog
+        val folderToDelete = pendingDeleteFolder
+        if (folderToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { pendingDeleteFolder = null },
+                backgroundColor = dialogBackground,
+                contentColor = textColor,
+                title = {
+                    Text(
+                        text = "Delete folder?",
+                        color = textColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This will permanently remove \"${folderToDelete.name}\" and all its contents.",
+                        color = textColor.copy(alpha = 0.85f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteFolder(folderToDelete.id)
+                        pendingDeleteFolder = null
+                    }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDeleteFolder = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
     
     // Floating Action Button for adding folders (hide in selection mode)
@@ -458,9 +780,15 @@ private fun FolderItem(
     horizontalPadding: Dp,
     selectionMode: Boolean,
     isSelected: Boolean,
+    showMenu: Boolean,
+    dialogBackground: Color,
     onFolderClick: () -> Unit,
     onFolderLongClick: () -> Unit,
-    onSelectionChanged: (Boolean) -> Unit
+    onSelectionChanged: (Boolean) -> Unit,
+    onDismissMenu: () -> Unit,
+    onMenuEditName: () -> Unit,
+    onMenuMoveToFolder: () -> Unit,
+    onMenuDelete: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -499,8 +827,69 @@ private fun FolderItem(
         if (selectionMode) {
             Checkbox(
                 checked = isSelected,
-                onCheckedChange = onSelectionChanged
+                onCheckedChange = onSelectionChanged,
+                modifier = Modifier.size(24.dp)
             )
+        }
+        
+        // Dropdown menu anchored to this item
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = onDismissMenu,
+            offset = DpOffset(x = 150.dp, y = 0.dp),
+            modifier = Modifier.background(color = dialogBackground)
+        ) {
+            DropdownMenuItem(
+                onClick = {
+                    onMenuEditName()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Edit name", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuMoveToFolder()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Move to folder", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuDelete()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
         }
     }
 }
@@ -512,9 +901,17 @@ private fun RecordingItem(
     textColor: Color,
     selectionMode: Boolean,
     isSelected: Boolean,
+    showMenu: Boolean,
+    dialogBackground: Color,
     onRecordingClick: () -> Unit,
     onRecordingLongClick: () -> Unit,
-    onSelectionChanged: (Boolean) -> Unit
+    onSelectionChanged: (Boolean) -> Unit,
+    onDismissMenu: () -> Unit,
+    onMenuOpen: () -> Unit,
+    onMenuCopyTranscript: () -> Unit,
+    onMenuEditName: () -> Unit,
+    onMenuMoveToFolder: () -> Unit,
+    onMenuDelete: () -> Unit
 ) {
     val firstLine = remember(entry.transcript) {
         entry.transcript
@@ -618,7 +1015,10 @@ private fun RecordingItem(
         }
 
         // Duration and selection
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier.width(56.dp),
+            contentAlignment = Alignment.Center
+        ) {
             if (!selectionMode) {
                 Text(
                     text = durationText,
@@ -628,8 +1028,103 @@ private fun RecordingItem(
             } else {
                 Checkbox(
                     checked = isSelected,
-                    onCheckedChange = onSelectionChanged
+                    onCheckedChange = onSelectionChanged,
+                    modifier = Modifier.size(24.dp)
                 )
+            }
+        }
+        
+        // Dropdown menu anchored to this item
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = onDismissMenu,
+            offset = DpOffset(x = 150.dp, y = 0.dp),
+            modifier = Modifier.background(color = dialogBackground)
+        ) {
+            DropdownMenuItem(
+                onClick = {
+                    onDismissMenu()
+                    onMenuOpen()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.ChatBubble,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Open", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuCopyTranscript()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Copy transcript", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuEditName()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Edit name", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuMoveToFolder()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Move to folder", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuDelete()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }

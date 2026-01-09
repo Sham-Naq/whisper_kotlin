@@ -136,6 +136,7 @@ fun ManageModelsScreen(
                     }
                 }
             }
+
         }
 
         // Delete model confirmation dialog

@@ -3,6 +3,8 @@ package com.example.whisper_kotlin.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,18 +25,36 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.TextButton
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import android.widget.Toast
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import java.util.Calendar
 import java.util.Locale
 
@@ -79,6 +99,16 @@ fun RecentsScreen(
     onOpenTranscription: (Long) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val dialogBackground = MaterialTheme.colorScheme.surface
+    
+    var showRecordingMenu by remember { mutableStateOf<SavedTranscription?>(null) }
+    var showEditNameDialog by remember { mutableStateOf<SavedTranscription?>(null) }
+    var editedName by remember { mutableStateOf("") }
+    var showMoveToFolderDialog by remember { mutableStateOf<SavedTranscription?>(null) }
+    var pendingDelete by remember { mutableStateOf<SavedTranscription?>(null) }
+    
     val now = System.currentTimeMillis()
 
     val groupedTranscriptions = remember(uiState.savedTranscriptions) {
@@ -128,7 +158,26 @@ fun RecentsScreen(
                         TranscriptionItem(
                             entry = entry,
                             textColor = textColor,
-                            onClick = { onOpenTranscription(entry.id) }
+                            showMenu = showRecordingMenu == entry,
+                            dialogBackground = dialogBackground,
+                            onClick = { onOpenTranscription(entry.id) },
+                            onLongClick = { showRecordingMenu = entry },
+                            onDismissMenu = { showRecordingMenu = null },
+                            onMenuOpen = { onOpenTranscription(entry.id) },
+                            onMenuCopyTranscript = {
+                                clipboardManager.setText(AnnotatedString(entry.transcript))
+                                Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+                            },
+                            onMenuEditName = {
+                                editedName = entry.fileLabel
+                                showEditNameDialog = entry
+                            },
+                            onMenuMoveToFolder = {
+                                showMoveToFolderDialog = entry
+                            },
+                            onMenuDelete = {
+                                pendingDelete = entry
+                            }
                         )
 
                         // Add divider except for the last item in the last group
@@ -151,13 +200,159 @@ fun RecentsScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+    
+    // Edit name dialog
+    val entryToEdit = showEditNameDialog
+    if (entryToEdit != null) {
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = null },
+            backgroundColor = dialogBackground,
+            contentColor = textColor,
+            title = { Text(text = "Rename", color = textColor, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column {
+                    Text(
+                        text = "Enter a new name for this recording.",
+                        color = textColor.copy(alpha = 0.85f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editedName,
+                        onValueChange = { editedName = it },
+                        singleLine = true,
+                        placeholder = { Text("New name") }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = editedName.trim()
+                        if (name.isNotEmpty()) {
+                            viewModel.renameTranscription(entryToEdit.id, name)
+                        }
+                        showEditNameDialog = null
+                    }
+                ) { Text("Rename") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNameDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Move to folder dialog
+    val entryToMove = showMoveToFolderDialog
+    if (entryToMove != null) {
+        val availableFolders = uiState.folders.sortedBy { it.name.lowercase() }
+        AlertDialog(
+            onDismissRequest = { showMoveToFolderDialog = null },
+            backgroundColor = dialogBackground,
+            contentColor = textColor,
+            title = { Text(text = "Move to folder", color = textColor, fontWeight = FontWeight.SemiBold) },
+            text = {
+                if (availableFolders.isEmpty()) {
+                    Text(
+                        text = "No folders available. Create a folder first.",
+                        color = textColor.copy(alpha = 0.85f)
+                    )
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        item {
+                            Text(
+                                text = "Select a folder:",
+                                color = textColor.copy(alpha = 0.85f),
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        items(availableFolders.size) { index ->
+                            val folder = availableFolders[index]
+                            TextButton(
+                                onClick = {
+                                    viewModel.moveToFolder(entryToMove.id, folder.id)
+                                    showMoveToFolderDialog = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.FolderOpen,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(folder.name)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMoveToFolderDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Delete dialog
+    val entryToDelete = pendingDelete
+    if (entryToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            backgroundColor = dialogBackground,
+            contentColor = textColor,
+            title = {
+                Text(
+                    text = "Delete transcription?",
+                    color = textColor,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(
+                    text = "This will permanently remove ${entryToDelete.fileLabel}.",
+                    color = textColor.copy(alpha = 0.85f)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteTranscription(context, entryToDelete.id)
+                    pendingDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TranscriptionItem(
     entry: SavedTranscription,
     textColor: Color,
-    onClick: () -> Unit
+    showMenu: Boolean,
+    dialogBackground: Color,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onMenuOpen: () -> Unit,
+    onMenuCopyTranscript: () -> Unit,
+    onMenuEditName: () -> Unit,
+    onMenuMoveToFolder: () -> Unit,
+    onMenuDelete: () -> Unit
 ) {
     val firstLine = remember(entry.transcript) {
         entry.transcript
@@ -183,10 +378,12 @@ private fun TranscriptionItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
+            .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(color = textColor.copy(alpha = 0.1f))
-            ) { onClick() }
+                indication = ripple(color = textColor.copy(alpha = 0.1f)),
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -265,6 +462,100 @@ private fun TranscriptionItem(
             color = textColor.copy(alpha = 0.6f),
             style = TextStyle(fontSize = 12.sp)
         )
+        
+        // Dropdown menu anchored to this item
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = onDismissMenu,
+            offset = DpOffset(x = 150.dp, y = 0.dp),
+            modifier = Modifier.background(color = dialogBackground)
+        ) {
+            DropdownMenuItem(
+                onClick = {
+                    onDismissMenu()
+                    onMenuOpen()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.ChatBubble,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Open", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuCopyTranscript()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Copy transcript", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuEditName()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Edit name", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuMoveToFolder()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Move to folder", color = textColor)
+                }
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onMenuDelete()
+                    onDismissMenu()
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
     }
 }
 
