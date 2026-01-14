@@ -4,32 +4,52 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Text
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrivacyPolicyScreen(
     modifier: Modifier = Modifier,
     textColor: Color = Color(0xFF0D47A1)
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    androidx.compose.material3.Text(
+                        text = "Privacy Policy",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // Effective Date
         Text(
             text = "Effective Date: September 6, 2025",
@@ -81,11 +101,6 @@ fun PrivacyPolicyScreen(
         BulletPoint(
             title = "Usage Data & Analytics",
             description = "We do not collect any usage statistics, analytics, crash logs, or diagnostic data about how you use the app. Our focus is purely on the functionality provided locally on your device.",
-            textColor = textColor
-        )
-
-        SubBulletText(
-            text = "*Note on System-Level Data:* Please be aware that standard, anonymized system-level diagnostic and usage data (e.g., crash reports, general app usage statistics) collected by Apple as part of the iOS operating system are outside the scope of this policy and are governed by Apple's privacy policies. **OffScribe** itself does not initiate or collect this data.",
             textColor = textColor
         )
 
@@ -177,12 +192,46 @@ fun PrivacyPolicyScreen(
             textColor = textColor
         )
 
+        // Changes to This Privacy Policy
+        SectionHeading(text = "Changes to This Privacy Policy", textColor = textColor)
+        
+        BodyText(
+            text = "We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page. You are advised to review this Privacy Policy periodically for any changes. Changes to this Privacy Policy are effective when they are posted on this page. Since we do not collect contact information, updates will be solely through the App Store listing or within the app itself.",
+            textColor = textColor
+        )
+
+        // Contact Us
+        SectionHeading(text = "Contact Us", textColor = textColor)
+        
+        BodyText(
+            text = "If you have any questions or suggestions about our Privacy Policy or our commitment to your privacy, please do not hesitate to contact us:",
+            textColor = textColor
+        )
+
+        SubsectionHeading(text = "By email:", textColor = textColor)
+        
+        // Email as clickable text
+        androidx.compose.foundation.text.ClickableText(
+            text = buildAnnotatedString {
+                withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                    append("contact@gigantech.io")
+                }
+            },
+            style = TextStyle(
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Normal
+            ),
+            modifier = Modifier.padding(start = 12.dp),
+            onClick = { }
+        )
+
         Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }
 
 @Composable
-private fun SectionHeading(text: String, textColor: Color) {
+fun SectionHeading(text: String, textColor: Color) {
     Text(
         text = text,
         fontSize = 22.sp,
@@ -193,7 +242,7 @@ private fun SectionHeading(text: String, textColor: Color) {
 }
 
 @Composable
-private fun SubsectionHeading(text: String, textColor: Color) {
+fun SubsectionHeading(text: String, textColor: Color) {
     Text(
         text = text,
         fontSize = 16.sp,
@@ -204,7 +253,7 @@ private fun SubsectionHeading(text: String, textColor: Color) {
 }
 
 @Composable
-private fun BodyText(text: String, textColor: Color) {
+fun BodyText(text: String, textColor: Color) {
     val annotatedString = buildAnnotatedString {
         var lastIndex = 0
         val boldPattern = "\\*\\*(.+?)\\*\\*".toRegex()
@@ -238,7 +287,7 @@ private fun BodyText(text: String, textColor: Color) {
 }
 
 @Composable
-private fun BulletPoint(title: String, description: String, textColor: Color) {
+fun BulletPoint(title: String, description: String, textColor: Color) {
     Column(
         modifier = Modifier.padding(start = 16.dp, top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -260,7 +309,7 @@ private fun BulletPoint(title: String, description: String, textColor: Color) {
 }
 
 @Composable
-private fun SubBulletText(text: String, textColor: Color) {
+fun SubBulletText(text: String, textColor: Color) {
     Text(
         text = text,
         fontSize = 13.sp,

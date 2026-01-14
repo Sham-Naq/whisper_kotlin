@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.Icon
+import androidx.compose.material.ripple
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Slider
 import androidx.compose.material.Text
@@ -41,12 +42,15 @@ import androidx.compose.material.TextButton
 import androidx.compose.material.TextFieldDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.*
@@ -105,7 +109,10 @@ fun RecorderScreen(
     command: RecorderCommand?,
     onCommandHandled: () -> Unit,
     onRecordingStateChanged: (Boolean) -> Unit,
-    onViewTranscription: (Long) -> Unit
+    onViewTranscription: (Long) -> Unit,
+    initialFolderId: Long? = null,
+    selectedLanguageCode: String = "en",
+    onLanguageSelectionRequested: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -117,7 +124,6 @@ fun RecorderScreen(
     var wavFilePath by rememberSaveable { mutableStateOf<String?>(null) }
     var isRecordedAudio by rememberSaveable { mutableStateOf(false) }
     var recordingElapsedSeconds by rememberSaveable { mutableStateOf(0) }
-    var selectedLanguageCode by rememberSaveable { mutableStateOf("en") }
 
     fun currentRawFile(): File? = rawFilePath?.let { File(it) }?.takeIf { it.exists() }
     fun currentWavFile(): File? = wavFilePath?.let { File(it) }?.takeIf { it.exists() }
@@ -131,7 +137,7 @@ fun RecorderScreen(
     var playbackProgress by rememberSaveable { mutableStateOf(0f) }
     var playbackPositionMs by rememberSaveable { mutableStateOf(0) }
     var playbackDurationMs by rememberSaveable { mutableStateOf(0) }
-    var selectedFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedFolderId by rememberSaveable { mutableStateOf<Long?>(initialFolderId) }
 
     val transcriptionUi by transcriptionViewModel.uiState.collectAsState()
     val allFolders = transcriptionUi.folders
@@ -991,7 +997,7 @@ fun RecorderScreen(
                                                     )
                                                 } else {
                                                     Icon(
-                                                        imageVector = androidx.compose.material.icons.Icons.Filled.AccessTime,
+                                                        imageVector = androidx.compose.material.icons.Icons.Filled.Download,
                                                         contentDescription = "Not downloaded",
                                                         tint = textColor.copy(alpha = 0.4f),
                                                         modifier = Modifier.size(18.dp)
@@ -1027,74 +1033,45 @@ fun RecorderScreen(
                                     .offset(y = 1.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            ReusableDropdown(
-                                label = "",
-                                selectedText = when (selectedLanguageCode) {
-                                    "es" -> "Spanish"
-                                    "fr" -> "French"
-                                    "de" -> "German"
-                                    "ru" -> "Russian"
-                                    "ur" -> "Urdu"
-                                    else -> "English"
-                                },
-                                textColor = textColor,
-                                isDark = isDark,
-                                modifier = Modifier.weight(1f),
-                                enabled = true
-                            ) { closeMenu ->
-                                DropdownMenuItem(
-                                    text = "English",
-                                    textColor = textColor,
-                                    onClick = {
-                                        selectedLanguageCode = "en"
-                                        closeMenu()
+                            
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        color = Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(color = textColor.copy(alpha = 0.1f))
+                                    ) { onLanguageSelectionRequested() }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material.Text(
+                                    text = when (selectedLanguageCode) {
+                                        "es" -> "Spanish"
+                                        "fr" -> "French"
+                                        "de" -> "German"
+                                        "ru" -> "Russian"
+                                        "ur" -> "Urdu"
+                                        "zh" -> "Chinese"
+                                        "ja" -> "Japanese"
+                                        "ko" -> "Korean"
+                                        "pt" -> "Portuguese"
+                                        "ar" -> "Arabic"
+                                        "hi" -> "Hindi"
+                                        else -> "English"
                                     },
-                                    enabled = true
+                                    color = textColor,
+                                    fontSize = 15.sp
                                 )
-                                DropdownMenuItem(
-                                    text = "Urdu",
-                                    textColor = textColor,
-                                    onClick = {
-                                        selectedLanguageCode = "ur"
-                                        closeMenu()
-                                    },
-                                    enabled = true
-                                )
-                                DropdownMenuItem(
-                                    text = "Spanish",
-                                    textColor = textColor,
-                                    onClick = {
-                                        selectedLanguageCode = "es"
-                                        closeMenu()
-                                    },
-                                    enabled = true
-                                )
-                                DropdownMenuItem(
-                                    text = "French",
-                                    textColor = textColor,
-                                    onClick = {
-                                        selectedLanguageCode = "fr"
-                                        closeMenu()
-                                    },
-                                    enabled = true
-                                )
-                                DropdownMenuItem(
-                                    text = "German",
-                                    textColor = textColor,
-                                    onClick = {
-                                        selectedLanguageCode = "de"
-                                        closeMenu()
-                                    },
-                                    enabled = true
-                                )
-                                DropdownMenuItem(
-                                    text = "Russian",
-                                    textColor = textColor,
-                                    onClick = {
-                                        selectedLanguageCode = "ru"
-                                        closeMenu()
-                                    },
-                                    enabled = true
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.ArrowForwardIos,
+                                    contentDescription = "Select Language",
+                                    tint = textColor.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
@@ -1114,7 +1091,11 @@ fun RecorderScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Outlined.Home,
+                                imageVector = if (selectedFolderId == null) {
+                                    androidx.compose.material.icons.Icons.Outlined.Home
+                                } else {
+                                    androidx.compose.material.icons.Icons.Outlined.Folder
+                                },
                                 contentDescription = null,
                                 tint = textColor.copy(alpha = 0.6f),
                                 modifier = Modifier

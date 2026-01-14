@@ -9,6 +9,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
 import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.GpsFixed
@@ -26,19 +29,34 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppFeaturesScreen(
     modifier: Modifier = Modifier,
     textColor: Color = Color(0xFF0D47A1)
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp)
-    ) {
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    androidx.compose.material3.Text(
+                        text = "App Features",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
         // Gift icon with circular background
         Box(
             modifier = Modifier
@@ -131,11 +149,12 @@ fun AppFeaturesScreen(
                 textColor = textColor
             )
         }
+        }
     }
 }
 
 @Composable
-private fun FeatureItem(
+fun FeatureItem(
     icon: ImageVector,
     iconColor: Color,
     title: String,
@@ -174,12 +193,12 @@ private fun FeatureItem(
 
 // Custom infinity icon since Material Icons doesn't have one
 @Composable
-private fun InfinityIcon(): ImageVector {
+fun InfinityIcon(): ImageVector {
     return androidx.compose.material.icons.Icons.Filled.AllInclusive
 }
 
 // Custom target/accuracy icon
 @Composable
-private fun TargetIcon(): ImageVector {
+fun TargetIcon(): ImageVector {
     return androidx.compose.material.icons.Icons.Filled.GpsFixed
 }

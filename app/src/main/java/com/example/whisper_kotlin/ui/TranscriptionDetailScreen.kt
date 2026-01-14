@@ -79,6 +79,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private fun cleanModelLabel(label: String): String {
+    // Remove "ggml-" prefix and " (asset)" suffix
+    return label
+        .removePrefix("ggml-")
+        .removeSuffix(" (asset)")
+        .replace("-", "_")
+}
+
 @Composable
 fun TranscriptionDetailScreen(
     entry: SavedTranscription,
@@ -308,7 +316,7 @@ fun TranscriptionDetailScreen(
         modifier = modifier
             .fillMaxSize()
             .background(pageBackground)
-    ) {
+    )  {
         if (isReTranscribing) {
             Column(
                 modifier = Modifier
@@ -356,12 +364,20 @@ fun TranscriptionDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Header: Title centered
+                // Header: Title centered with truncation
+                val displayTitle = remember(currentEntry.fileLabel) {
+                    val label = currentEntry.fileLabel
+                    if (label.length > 18) {
+                        label.take(18) + "..."
+                    } else {
+                        label
+                    }
+                }
                 BasicText(
-                    text = currentEntry.fileLabel,
+                    text = displayTitle,
                     style = TextStyle(
                         color = textColor,
                         fontWeight = FontWeight.SemiBold,
@@ -401,7 +417,7 @@ fun TranscriptionDetailScreen(
                         )
                         Spacer(modifier = Modifier.size(4.dp))
                         BasicText(
-                            text = currentEntry.modelLabel,
+                            text = cleanModelLabel(currentEntry.modelLabel),
                             style = TextStyle(color = textColor.copy(alpha = 0.65f), fontSize = 14.sp)
                         )
                         if (currentEntry.languageCode != null) {
@@ -597,7 +613,7 @@ fun TranscriptionDetailScreen(
                                                     currentEntry.transcript
                                                 }
                                                 clipboardManager.setText(AnnotatedString(textToCopy))
-                                                Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+
                                             }
                                         )
                                     }
@@ -1189,7 +1205,6 @@ fun EmbeddedTranscriptionDetail(
                                             contentDescription = "Copy transcript",
                                             onClick = {
                                                 clipboardManager.setText(AnnotatedString(transcriptBody))
-                                                Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
                                             }
                                         )
                                     }

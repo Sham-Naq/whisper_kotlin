@@ -77,6 +77,8 @@ fun HomeScreen(
     val navigableTabs = remember(disabledTabs) { bottomTabOrder.filterNot { it in disabledTabs } }
 
     var isRecorderSheetVisible by rememberSaveable { mutableStateOf(false) }
+    var showLanguageSelection by rememberSaveable { mutableStateOf(false) }
+    var selectedLanguageCode by rememberSaveable { mutableStateOf("en") }
 
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themePreference) {
@@ -118,6 +120,7 @@ fun HomeScreen(
     val displayedTab = if (isRecorderSheetVisible) BottomTab.Recorder else activeTab
 
     val currentHeader = when {
+        showLanguageSelection -> "Language"
         detailEntry != null -> "Transcript"
         settingsScreen == SettingsScreen.ManageModels -> "Manage Models"
         settingsScreen == SettingsScreen.ManageFiles -> "Manage Files"
@@ -146,6 +149,11 @@ fun HomeScreen(
 
     BackHandler(enabled = settingsScreen != null) {
         settingsScreen = null
+    }
+
+    BackHandler(enabled = showLanguageSelection) {
+        showLanguageSelection = false
+        isRecorderSheetVisible = true
     }
 
     val shouldReturnToTranscriptions =
@@ -179,7 +187,7 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
-                if (!(displayedTab == BottomTab.Settings && settingsScreen != null)) {
+                if (!(displayedTab == BottomTab.Settings && settingsScreen != null) && !showLanguageSelection) {
                     HomeTopBar(
                         currentHeader = currentHeader,
                         isInFolder = isInFolder,
@@ -192,8 +200,8 @@ fun HomeScreen(
                 }
             },
             bottomBar = {
-                // Only show bottom bar when not viewing detail
-                if (detailEntry == null) {
+                // Only show bottom bar when not viewing detail or language selection
+                if (detailEntry == null && !showLanguageSelection) {
                     Box(
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -275,7 +283,9 @@ fun HomeScreen(
                         onSettingsScreenChange = { settingsScreen = it },
                         onOpenTranscription = { id ->
                             openTranscription(id)
-                        }
+                        },
+                        selectedLanguageCode = selectedLanguageCode,
+                        onLanguageSelectionRequested = { showLanguageSelection = true }
                     )
                 }
             }
@@ -335,7 +345,13 @@ fun HomeScreen(
                                 isRecorderPaused = false
                             }
                         },
-                        onViewTranscription = openTranscription
+                        onViewTranscription = openTranscription,
+                        initialFolderId = if (activeTab == BottomTab.Transcription) uiState.currentFolderId else null,
+                        selectedLanguageCode = selectedLanguageCode,
+                        onLanguageSelectionRequested = {
+                            isRecorderSheetVisible = false
+                            showLanguageSelection = true
+                        }
                     )
                 }
             }
@@ -395,7 +411,7 @@ fun HomeScreen(
                         viewModel = transcriptionViewModel
                     )
 
-                    IconButton(
+                    TextButton(
                         onClick = {
                             if (!isDetailTranscribing) {
                                 detailEntryId = null
@@ -404,15 +420,41 @@ fun HomeScreen(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(top = 8.dp, end = 16.dp)
-                            .offset(y = -6 .dp)
+                            .offset(y = -16.dp),
+                        colors = androidx.compose.material.ButtonDefaults.textButtonColors(
+                            backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "Close",
-                            tint = primaryTextColor
+                        androidx.compose.material.Text(
+                            text = "Done",
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp
                         )
                     }
                 }
+            }
+        }
+
+        // Language Selection Screen
+        if (showLanguageSelection) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                LanguageSelectionScreen(
+                    selectedLanguageCode = selectedLanguageCode,
+                    onLanguageSelected = { code ->
+                        selectedLanguageCode = code
+                        showLanguageSelection = false
+                        isRecorderSheetVisible = true
+                    },
+                    textColor = primaryTextColor,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
@@ -631,7 +673,9 @@ private fun TabContent(
     onThemePreferenceChange: (ThemePreference) -> Unit,
     settingsScreen: SettingsScreen?,
     onSettingsScreenChange: (SettingsScreen?) -> Unit,
-    onOpenTranscription: (Long) -> Unit
+    onOpenTranscription: (Long) -> Unit,
+    selectedLanguageCode: String = "en",
+    onLanguageSelectionRequested: () -> Unit = {}
 ) {
     when (tab) {
         BottomTab.Recents -> {
@@ -668,7 +712,10 @@ private fun TabContent(
                 command = recorderCommand,
                 onCommandHandled = onCommandHandled,
                 onRecordingStateChanged = onRecordingStateChanged,
-                onViewTranscription = onOpenTranscription
+                onViewTranscription = onOpenTranscription,
+                initialFolderId = null,
+                selectedLanguageCode = selectedLanguageCode,
+                onLanguageSelectionRequested = onLanguageSelectionRequested
             )
         }
 

@@ -358,7 +358,7 @@ fun TranscriptionScreen(
                                         onMenuOpen = { onOpenTranscription(entry.id) },
                                         onMenuCopyTranscript = {
                                             clipboardManager.setText(AnnotatedString(entry.transcript))
-                                            Toast.makeText(context, "Transcript copied", Toast.LENGTH_SHORT).show()
+
                                         },
                                         onMenuEditName = {
                                             editedName = entry.fileLabel

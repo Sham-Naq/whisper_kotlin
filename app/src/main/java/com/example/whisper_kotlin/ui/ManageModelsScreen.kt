@@ -1,6 +1,7 @@
 package com.example.whisper_kotlin.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -128,6 +129,12 @@ fun ManageModelsScreen(
                             size = size,
                             isSelected = selectedModel?.id == spec.id,
                             textColor = textColor,
+                            onSelect = {
+                                if (onSelectModel != null) {
+                                    val modelOption = ModelOption(spec.id, spec.fileName, spec.url)
+                                    onSelectModel(modelOption)
+                                }
+                            },
                             onDelete = {
                                 modelToDelete = spec
                                 showDeleteModelDialog = true
@@ -203,6 +210,7 @@ private fun ModelListItem(
     size: Long,
     isSelected: Boolean,
     textColor: Color,
+    onSelect: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
@@ -213,6 +221,7 @@ private fun ModelListItem(
                 if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             )
+            .clickable(onClick = onSelect)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)

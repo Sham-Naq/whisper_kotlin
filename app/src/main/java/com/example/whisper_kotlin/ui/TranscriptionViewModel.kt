@@ -268,7 +268,7 @@ class TranscriptionViewModel(
             modelLabel = chosen?.id ?: localModel.name
         } else {
             WhisperEngine.loadModelFromAssets(appContext, "models/ggml-tiny-q5_1.bin", force = true)
-            modelLabel = "ggml-tiny-q5_1 (asset)"
+            modelLabel = "tiny_q5"
         }
 
         val startMs = SystemClock.elapsedRealtime()
